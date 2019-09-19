@@ -213,6 +213,21 @@ var _ = ginkgo.Describe("[sig-storage] EmptyDir volumes", func() {
 		doTest0777(f, testImageNonRootUid, v1.StorageMediumDefault)
 	})
 
+	framework.ConformanceIt("pod should create volumes with SELinux labels if enabled [LinuxOnly] [NodeConformance]", func() {
+		var (
+			medium   = v1.StorageMediumDefault
+			source   = &v1.EmptyDirVolumeSource{Medium: medium}
+			pod      = testPodWithVolume(imageutils.GetE2EImage(imageutils.FedoraMinimal), volumePath, source)
+		)
+
+		pod.Spec.Containers[0].Args = []string{
+			"ls", "-lZd", volumePath,
+		}
+		msg := fmt.Sprintf("finding SELinux labels on %s for pod %s", volumePath, pod.Name)
+		out := []string{ "container_file_t",}
+		f.TestContainerOutput(msg, pod, 0, out)
+	})
+
 	/*
 		Release : v1.15
 		Testname: EmptyDir, Shared volumes between containers

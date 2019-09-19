@@ -31,6 +31,7 @@ type RegistryList struct {
 	DockerLibraryRegistry   string `yaml:"dockerLibraryRegistry"`
 	E2eRegistry             string `yaml:"e2eRegistry"`
 	InvalidRegistry         string `yaml:"invalidRegistry"`
+	FedoraRegistry          string `yaml:"fedoraRegistry"`
 	GcRegistry              string `yaml:"gcRegistry"`
 	GcrReleaseRegistry      string `yaml:"gcrReleaseRegistry"`
 	GoogleContainerRegistry string `yaml:"googleContainerRegistry"`
@@ -67,6 +68,7 @@ func initReg() RegistryList {
 		DockerLibraryRegistry:   "docker.io/library",
 		E2eRegistry:             "gcr.io/kubernetes-e2e-test-images",
 		InvalidRegistry:         "invalid.com/invalid",
+		FedoraRegistry:          "registry.fedoraproject.org",
 		GcRegistry:              "k8s.gcr.io",
 		GcrReleaseRegistry:      "gcr.io/gke-release",
 		GoogleContainerRegistry: "gcr.io/google-containers",
@@ -96,6 +98,7 @@ var (
 	dockerLibraryRegistry   = registry.DockerLibraryRegistry
 	e2eRegistry             = registry.E2eRegistry
 	e2eGcRegistry           = "gcr.io/kubernetes-e2e-test-images"
+	fedoraRegistry          = registry.FedoraRegistry
 	gcAuthenticatedRegistry = registry.GcAuthenticatedRegistry
 	gcRegistry              = registry.GcRegistry
 	gcrReleaseRegistry      = registry.GcrReleaseRegistry
@@ -139,6 +142,8 @@ const (
 	EchoServer
 	// Etcd image
 	Etcd
+	// Fedora minimal image
+	FedoraMinimal
 	// GBFrontend image
 	GBFrontend
 	// Httpd image
@@ -218,6 +223,7 @@ func initImageConfigs() map[int]Config {
 	configs[DebianBase] = Config{googleContainerRegistry, "debian-base", "0.4.1"}
 	configs[EchoServer] = Config{e2eRegistry, "echoserver", "2.2"}
 	configs[Etcd] = Config{gcRegistry, "etcd", "3.3.15"}
+	configs[FedoraMinimal] = Config{fedoraRegistry, "fedora-minimal", "30"}
 	configs[GBFrontend] = Config{sampleRegistry, "gb-frontend", "v6"}
 	configs[Httpd] = Config{dockerLibraryRegistry, "httpd", "2.4.38-alpine"}
 	configs[HttpdNew] = Config{dockerLibraryRegistry, "httpd", "2.4.39-alpine"}
