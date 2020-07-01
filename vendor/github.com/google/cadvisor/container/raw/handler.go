@@ -25,6 +25,8 @@ import (
 	info "github.com/google/cadvisor/info/v1"
 	"github.com/google/cadvisor/machine"
 
+	cgroupfs "github.com/opencontainers/runc/libcontainer/cgroups/fs"
+	"github.com/opencontainers/runc/libcontainer/configs"
 	"k8s.io/klog/v2"
 )
 
@@ -49,16 +51,19 @@ func isRootCgroup(name string) bool {
 }
 
 func newRawContainerHandler(name string, cgroupSubsystems *libcontainer.CgroupSubsystems, machineInfoFactory info.MachineInfoFactory, fsInfo fs.FsInfo, watcher *common.InotifyWatcher, rootFs string, includedMetrics container.MetricSet) (container.ContainerHandler, error) {
+	cgroupPaths := common.MakeCgroupPaths(cgroupSubsystems.MountPoints, name)
+
 	cHints, err := common.GetContainerHintsFromFile(*common.ArgContainerHints)
 	if err != nil {
 		return nil, err
 	}
 
-	cgroupPaths := common.MakeCgroupPaths(cgroupSubsystems.MountPoints, name)
-
-	cgroupManager, err := libcontainer.NewCgroupManager(name, cgroupPaths)
-	if err != nil {
-		return nil, err
+	// Generate the equivalent cgroup manager for this container.
+	cgroupManager := &cgroupfs.Manager{
+		Cgroups: &configs.Cgroup{
+			Name: name,
+		},
+		Paths: cgroupPaths,
 	}
 
 	var externalMounts []common.Mount
@@ -187,18 +192,13 @@ func fsToFsStats(fs *fs.Fs) info.FsStats {
 func (h *rawContainerHandler) getFsStats(stats *info.ContainerStats) error {
 	var filesystems []fs.Fs
 	var err error
-	// Early exist if no disk metrics are to be collected.
-	if !h.includedMetrics.Has(container.DiskUsageMetrics) && !h.includedMetrics.Has(container.DiskIOMetrics) {
-		return nil
-	}
-
 	// Get Filesystem information only for the root cgroup.
 	if isRootCgroup(h.name) {
 		filesystems, err = h.fsInfo.GetGlobalFsInfo()
 		if err != nil {
 			return err
 		}
-	} else {
+	} else if h.includedMetrics.Has(container.DiskUsageMetrics) || h.includedMetrics.Has(container.DiskIOMetrics) {
 		if len(h.externalMounts) > 0 {
 			mountSet := make(map[string]struct{})
 			for _, mount := range h.externalMounts {
@@ -211,14 +211,14 @@ func (h *rawContainerHandler) getFsStats(stats *info.ContainerStats) error {
 		}
 	}
 
-	if h.includedMetrics.Has(container.DiskUsageMetrics) {
+	if isRootCgroup(h.name) || h.includedMetrics.Has(container.DiskUsageMetrics) {
 		for i := range filesystems {
 			fs := filesystems[i]
 			stats.Filesystem = append(stats.Filesystem, fsToFsStats(&fs))
 		}
 	}
 
-	if h.includedMetrics.Has(container.DiskIOMetrics) {
+	if isRootCgroup(h.name) || h.includedMetrics.Has(container.DiskIOMetrics) {
 		common.AssignDeviceNamesToDiskStats(&fsNamer{fs: filesystems, factory: h.machineInfoFactory}, &stats.DiskIo)
 
 	}

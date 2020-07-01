@@ -120,8 +120,7 @@ type DeprecatedContainerStats struct {
 	HasMemory bool           `json:"has_memory"`
 	Memory    v1.MemoryStats `json:"memory,omitempty"`
 	// Hugepage statistics
-	HasHugetlb bool                       `json:"has_hugetlb"`
-	Hugetlb    map[string]v1.HugetlbStats `json:"hugetlb,omitempty"`
+	HasHugetlb bool `json:"has_hugetlb"`
 	// Network statistics
 	HasNetwork bool         `json:"has_network"`
 	Network    NetworkStats `json:"network,omitempty"`
@@ -137,15 +136,8 @@ type DeprecatedContainerStats struct {
 	// Custom Metrics
 	HasCustomMetrics bool                      `json:"has_custom_metrics"`
 	CustomMetrics    map[string][]v1.MetricVal `json:"custom_metrics,omitempty"`
-	// Perf events counters
-	PerfStats []v1.PerfStat `json:"perf_stats,omitempty"`
-	// Statistics originating from perf uncore events.
-	// Applies only for root container.
-	PerfUncoreStats []v1.PerfUncoreStat `json:"perf_uncore_stats,omitempty"`
 	// Referenced memory
 	ReferencedMemory uint64 `json:"referenced_memory,omitempty"`
-	// Resource Control (resctrl) statistics
-	Resctrl v1.ResctrlStats `json:"resctrl,omitempty"`
 }
 
 type ContainerStats struct {
@@ -176,13 +168,8 @@ type ContainerStats struct {
 	CustomMetrics map[string][]v1.MetricVal `json:"custom_metrics,omitempty"`
 	// Perf events counters
 	PerfStats []v1.PerfStat `json:"perf_stats,omitempty"`
-	// Statistics originating from perf uncore events.
-	// Applies only for root container.
-	PerfUncoreStats []v1.PerfUncoreStat `json:"perf_uncore_stats,omitempty"`
 	// Referenced memory
 	ReferencedMemory uint64 `json:"referenced_memory,omitempty"`
-	// Resource Control (resctrl) statistics
-	Resctrl v1.ResctrlStats `json:"resctrl,omitempty"`
 }
 
 type Percentiles struct {
@@ -288,7 +275,6 @@ type ProcessInfo struct {
 	CgroupPath    string  `json:"cgroup_path"`
 	Cmd           string  `json:"cmd"`
 	FdCount       int     `json:"fd_count"`
-	Psr           int     `json:"psr"`
 }
 
 type TcpStat struct {

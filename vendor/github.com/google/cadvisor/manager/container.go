@@ -94,9 +94,6 @@ type containerData struct {
 
 	// perfCollector updates stats for perf_event cgroup controller.
 	perfCollector stats.Collector
-
-	// resctrlCollector updates stats for resctrl controller.
-	resctrlCollector stats.Collector
 }
 
 // jitter returns a time.Duration between duration and duration + maxFactor * duration,
@@ -162,7 +159,7 @@ func (cd *containerData) notifyOnDemand() {
 
 func (cd *containerData) GetInfo(shouldUpdateSubcontainers bool) (*containerInfo, error) {
 	// Get spec and subcontainers.
-	if cd.clock.Since(cd.infoLastUpdatedTime) > 5*time.Second || shouldUpdateSubcontainers {
+	if cd.clock.Since(cd.infoLastUpdatedTime) > 5*time.Second {
 		err := cd.updateSpec()
 		if err != nil {
 			return nil, err
@@ -289,12 +286,12 @@ func (cd *containerData) GetProcessList(cadvisorContainer string, inHostNamespac
 	if !inHostNamespace {
 		rootfs = "/rootfs"
 	}
-	format := "user,pid,ppid,stime,pcpu,pmem,rss,vsz,stat,time,comm,psr,cgroup"
+	format := "user,pid,ppid,stime,pcpu,pmem,rss,vsz,stat,time,comm,cgroup"
 	out, err := cd.getPsOutput(inHostNamespace, format)
 	if err != nil {
 		return nil, err
 	}
-	expectedFields := 13
+	expectedFields := 12
 	processes := []v2.ProcessInfo{}
 	lines := strings.Split(string(out), "\n")
 	for _, line := range lines[1:] {
@@ -333,12 +330,7 @@ func (cd *containerData) GetProcessList(cadvisorContainer string, inHostNamespac
 		}
 		// convert to bytes
 		vs *= 1024
-		psr, err := strconv.Atoi(fields[11])
-		if err != nil {
-			return nil, fmt.Errorf("invalid pid %q: %v", fields[1], err)
-		}
-
-		cgroup, err := cd.getCgroupPath(fields[12])
+		cgroup, err := cd.getCgroupPath(fields[11])
 		if err != nil {
 			return nil, fmt.Errorf("could not parse cgroup path from %q: %v", fields[11], err)
 		}
@@ -376,7 +368,6 @@ func (cd *containerData) GetProcessList(cadvisorContainer string, inHostNamespac
 				Cmd:           fields[10],
 				CgroupPath:    cgroupPath,
 				FdCount:       fdCount,
-				Psr:           psr,
 			})
 		}
 	}
@@ -409,7 +400,6 @@ func newContainerData(containerName string, memoryCache *memory.InMemoryCache, h
 		clock:                    clock,
 		perfCollector:            &stats.NoopCollector{},
 		nvidiaCollector:          &stats.NoopCollector{},
-		resctrlCollector:         &stats.NoopCollector{},
 	}
 	cont.info.ContainerReference = ref
 
@@ -651,8 +641,6 @@ func (cd *containerData) updateStats() error {
 
 	perfStatsErr := cd.perfCollector.UpdateStats(stats)
 
-	resctrlStatsErr := cd.resctrlCollector.UpdateStats(stats)
-
 	ref, err := cd.handler.ContainerReference()
 	if err != nil {
 		// Ignore errors if the container is dead.
@@ -680,10 +668,6 @@ func (cd *containerData) updateStats() error {
 	if perfStatsErr != nil {
 		klog.Errorf("error occurred while collecting perf stats for container %s: %s", cInfo.Name, err)
 		return perfStatsErr
-	}
-	if resctrlStatsErr != nil {
-		klog.Errorf("error occurred while collecting resctrl stats for container %s: %s", cInfo.Name, err)
-		return resctrlStatsErr
 	}
 	return customStatsErr
 }

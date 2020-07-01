@@ -16,7 +16,6 @@
 package machine
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -247,17 +246,6 @@ func getUniqueCPUPropertyCount(cpuBusPath string, propertyName string) int {
 	}
 	uniques := make(map[string]bool)
 	for _, sysCPUPath := range sysCPUPaths {
-		onlinePath := filepath.Join(sysCPUPath, "online")
-		onlineVal, err := ioutil.ReadFile(onlinePath)
-		if err != nil {
-			klog.Warningf("Cannot determine CPU %s online state, skipping", sysCPUPath)
-			continue
-		}
-		onlineVal = bytes.TrimSpace(onlineVal)
-		if len(onlineVal) == 0 || onlineVal[0] != 49 {
-			klog.Warningf("CPU %s is offline, skipping", sysCPUPath)
-			continue
-		}
 		propertyPath := filepath.Join(sysCPUPath, sysFsCPUTopology, propertyName)
 		propertyVal, err := ioutil.ReadFile(propertyPath)
 		if err != nil {

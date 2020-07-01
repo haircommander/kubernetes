@@ -44,9 +44,7 @@ import (
 	cadvisorapiv2 "github.com/google/cadvisor/info/v2"
 	"github.com/google/cadvisor/manager"
 	"github.com/google/cadvisor/utils/sysfs"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
-	kubefeatures "k8s.io/kubernetes/pkg/features"
 	"k8s.io/utils/pointer"
 )
 
@@ -98,7 +96,7 @@ func New(imageFsInfoProvider ImageFsInfoProvider, rootPath string, cgroupRoots [
 		cadvisormetrics.AppMetrics:              struct{}{},
 		cadvisormetrics.ProcessMetrics:          struct{}{},
 	}
-	if usingLegacyStats || utilfeature.DefaultFeatureGate.Enabled(kubefeatures.LocalStorageCapacityIsolation) {
+	if usingLegacyStats {
 		includedMetrics[cadvisormetrics.DiskUsageMetrics] = struct{}{}
 	}
 

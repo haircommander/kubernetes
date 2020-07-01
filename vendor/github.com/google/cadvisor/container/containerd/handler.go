@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/errdefs"
+	cgroupfs "github.com/opencontainers/runc/libcontainer/cgroups/fs"
+	libcontainerconfigs "github.com/opencontainers/runc/libcontainer/configs"
 	"golang.org/x/net/context"
 
 	"github.com/google/cadvisor/container"
@@ -67,9 +69,11 @@ func newContainerdContainerHandler(
 	cgroupPaths := common.MakeCgroupPaths(cgroupSubsystems.MountPoints, name)
 
 	// Generate the equivalent cgroup manager for this container.
-	cgroupManager, err := containerlibcontainer.NewCgroupManager(name, cgroupPaths)
-	if err != nil {
-		return nil, err
+	cgroupManager := &cgroupfs.Manager{
+		Cgroups: &libcontainerconfigs.Cgroup{
+			Name: name,
+		},
+		Paths: cgroupPaths,
 	}
 
 	id := ContainerNameToContainerdID(name)

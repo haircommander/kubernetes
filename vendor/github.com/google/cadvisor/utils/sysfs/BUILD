@@ -6,7 +6,6 @@ go_library(
     importmap = "k8s.io/kubernetes/vendor/github.com/google/cadvisor/utils/sysfs",
     importpath = "github.com/google/cadvisor/utils/sysfs",
     visibility = ["//visibility:public"],
-    deps = ["//vendor/k8s.io/klog/v2:go_default_library"],
 )
 
 filegroup(

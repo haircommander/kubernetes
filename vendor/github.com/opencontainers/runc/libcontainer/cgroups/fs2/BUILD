@@ -5,12 +5,10 @@ go_library(
     srcs = [
         "cpu.go",
         "cpuset.go",
-        "create.go",
         "defaultpath.go",
         "devices.go",
         "freezer.go",
         "fs2.go",
-        "hugetlb.go",
         "io.go",
         "memory.go",
         "pids.go",
@@ -24,6 +22,7 @@ go_library(
         "//vendor/github.com/pkg/errors:go_default_library",
     ] + select({
         "@io_bazel_rules_go//go/platform:android": [
+            "//vendor/github.com/cyphar/filepath-securejoin:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/cgroups:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/cgroups/ebpf:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/cgroups/ebpf/devicefilter:go_default_library",
@@ -31,6 +30,7 @@ go_library(
             "//vendor/golang.org/x/sys/unix:go_default_library",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
+            "//vendor/github.com/cyphar/filepath-securejoin:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/cgroups:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/cgroups/ebpf:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/cgroups/ebpf/devicefilter:go_default_library",
