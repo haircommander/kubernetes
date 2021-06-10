@@ -28,7 +28,7 @@ USER_ID=$(id -u)
 GROUP_ID=$(id -g)
 
 DOCKER_OPTS=${DOCKER_OPTS:-""}
-IFS=" " read -r -a DOCKER <<< "docker ${DOCKER_OPTS}"
+IFS=" " read -r -a DOCKER <<< "podman ${DOCKER_OPTS}"
 DOCKER_HOST=${DOCKER_HOST:-""}
 
 # This will canonicalize the path
@@ -66,13 +66,13 @@ readonly KUBE_CROSS_VERSION
 #
 # *_OUTPUT_ROOT    - the base of all output in that environment.
 # *_OUTPUT_SUBPATH - location where golang stuff is built/cached.  Also
-#                    persisted across docker runs with a volume mount.
+#                    persisted across podman runs with a volume mount.
 # *_OUTPUT_BINPATH - location where final binaries are placed.  If the remote
 #                    is really remote, this is the stuff that has to be copied
 #                    back.
 # OUT_DIR can come in from the Makefile, so honor it.
 readonly LOCAL_OUTPUT_ROOT="${KUBE_ROOT}/${OUT_DIR:-_output}"
-readonly LOCAL_OUTPUT_SUBPATH="${LOCAL_OUTPUT_ROOT}/dockerized"
+readonly LOCAL_OUTPUT_SUBPATH="${LOCAL_OUTPUT_ROOT}/podmanized"
 readonly LOCAL_OUTPUT_BINPATH="${LOCAL_OUTPUT_SUBPATH}/bin"
 readonly LOCAL_OUTPUT_GOPATH="${LOCAL_OUTPUT_SUBPATH}/go"
 readonly LOCAL_OUTPUT_IMAGE_STAGING="${LOCAL_OUTPUT_ROOT}/images"
@@ -82,7 +82,7 @@ readonly THIS_PLATFORM_BIN="${LOCAL_OUTPUT_ROOT}/bin"
 
 readonly REMOTE_ROOT="/go/src/${KUBE_GO_PACKAGE}"
 readonly REMOTE_OUTPUT_ROOT="${REMOTE_ROOT}/_output"
-readonly REMOTE_OUTPUT_SUBPATH="${REMOTE_OUTPUT_ROOT}/dockerized"
+readonly REMOTE_OUTPUT_SUBPATH="${REMOTE_OUTPUT_ROOT}/podmanized"
 readonly REMOTE_OUTPUT_BINPATH="${REMOTE_OUTPUT_SUBPATH}/bin"
 readonly REMOTE_OUTPUT_GOPATH="${REMOTE_OUTPUT_SUBPATH}/go"
 
@@ -91,7 +91,7 @@ readonly REMOTE_OUTPUT_GOPATH="${REMOTE_OUTPUT_SUBPATH}/go"
 readonly KUBE_RSYNC_PORT="${KUBE_RSYNC_PORT:-}"
 
 # This is the port that rsync is running on *inside* the container. This may be
-# mapped to KUBE_RSYNC_PORT via docker networking.
+# mapped to KUBE_RSYNC_PORT via podman networking.
 readonly KUBE_CONTAINER_RSYNC_PORT=8730
 
 # These are the default versions (image tags) for their respective base images.
@@ -116,7 +116,7 @@ readonly KUBE_BUILD_SETCAP_IMAGE="${KUBE_BUILD_SETCAP_IMAGE:-$KUBE_BASE_IMAGE_RE
 # environment variables.
 #
 # $1 - server architecture
-kube::build::get_docker_wrapped_binaries() {
+kube::build::get_podman_wrapped_binaries() {
   ### If you change any of these lists, please also update DOCKERIZED_BINARIES
   ### in build/BUILD. And kube::golang::server_image_targets
   local targets=(
@@ -135,7 +135,7 @@ kube::build::get_docker_wrapped_binaries() {
 # Verify that the right utilities and such are installed for building Kube. Set
 # up some dynamic constants.
 # Args:
-#   $1 - boolean of whether to require functioning docker (default true)
+#   $1 - boolean of whether to require functioning podman (default true)
 #
 # Vars set:
 #   KUBE_ROOT_HASH
@@ -152,16 +152,15 @@ kube::build::get_docker_wrapped_binaries() {
 #   LOCAL_OUTPUT_BUILD_CONTEXT
 # shellcheck disable=SC2120 # optional parameters
 function kube::build::verify_prereqs() {
-  local -r require_docker=${1:-true}
+  local -r require_podman=${1:-true}
   kube::log::status "Verifying Prerequisites...."
   kube::build::ensure_tar || return 1
   kube::build::ensure_rsync || return 1
-  if ${require_docker}; then
-    kube::build::ensure_docker_in_path || return 1
+  if ${require_podman}; then
+    kube::build::ensure_podman_in_path || return 1
     if kube::build::is_osx; then
-        kube::build::docker_available_on_osx || return 1
+        kube::build::podman_available_on_osx || return 1
     fi
-    kube::util::ensure_docker_daemon_connectivity || return 1
 
     if (( KUBE_VERBOSE > 6 )); then
       kube::log::status "Docker Version:"
@@ -193,16 +192,16 @@ function kube::build::verify_prereqs() {
 # ---------------------------------------------------------------------------
 # Utility functions
 
-function kube::build::docker_available_on_osx() {
+function kube::build::podman_available_on_osx() {
   if [[ -z "${DOCKER_HOST}" ]]; then
-    if [[ -S "/var/run/docker.sock" ]] || [[ -S "$(docker context inspect --format  '{{.Endpoints.docker.Host}}' | awk -F 'unix://' '{print $2}')" ]]; then
-      kube::log::status "Using docker on macOS"
+    if [[ -S "/var/run/podman.sock" ]]; then
+      kube::log::status "Using Docker for MacOS"
       return 0
     fi
 
-    kube::log::status "No docker host is set."
+    kube::log::status "No podman host is set."
     kube::log::status "It looks like you're running Mac OS X, but Docker for Mac cannot be found."
-    kube::log::status "See: https://docs.docker.com/engine/installation/mac/ for installation instructions."
+    kube::log::status "See: https://docs.podman.com/engine/installation/mac/ for installation instructions."
     return 1
   fi
 }
@@ -222,10 +221,10 @@ function kube::build::ensure_rsync() {
   fi
 }
 
-function kube::build::ensure_docker_in_path() {
-  if [[ -z "$(which docker)" ]]; then
-    kube::log::error "Can't find 'docker' in PATH, please fix and retry."
-    kube::log::error "See https://docs.docker.com/installation/#installation for installation instructions."
+function kube::build::ensure_podman_in_path() {
+  if [[ -z "$(which podman)" ]]; then
+    kube::log::error "Can't find 'podman' in PATH, please fix and retry."
+    kube::log::error "See https://docs.podman.com/installation/#installation for installation instructions."
     return 1
   fi
 }
@@ -251,8 +250,8 @@ function kube::build::ensure_tar() {
   fi
 }
 
-function kube::build::has_docker() {
-  which docker &> /dev/null
+function kube::build::has_podman() {
+  which podman &> /dev/null
 }
 
 function kube::build::has_ip() {
@@ -263,9 +262,9 @@ function kube::build::has_ip() {
 #
 # $1 - image repo name
 # $2 - image tag
-function kube::build::docker_image_exists() {
+function kube::build::podman_image_exists() {
   [[ -n $1 && -n $2 ]] || {
-    kube::log::error "Internal error. Image not specified in docker_image_exists."
+    kube::log::error "Internal error. Image not specified in podman_image_exists."
     exit 2
   }
 
@@ -277,9 +276,9 @@ function kube::build::docker_image_exists() {
 # $1: The image repo/name
 # $2: The tag base. We consider any image that matches $2*
 # $3: The current image not to delete if provided
-function kube::build::docker_delete_old_images() {
+function kube::build::podman_delete_old_images() {
   # In Docker 1.12, we can replace this with
-  #    docker images "$1" --format "{{.Tag}}"
+  #    podman images "$1" --format "{{.Tag}}"
   for tag in $("${DOCKER[@]}" images "${1}" | tail -n +2 | awk '{print $2}') ; do
     if [[ "${tag}" != "${2}"* ]] ; then
       V=3 kube::log::status "Keeping image ${1}:${tag}"
@@ -299,9 +298,9 @@ function kube::build::docker_delete_old_images() {
 #
 # $1: The base container prefix
 # $2: The current container to keep, if provided
-function kube::build::docker_delete_old_containers() {
+function kube::build::podman_delete_old_containers() {
   # In Docker 1.12 we can replace this line with
-  #   docker ps -a --format="{{.Names}}"
+  #   podman ps -a --format="{{.Names}}"
   for container in $("${DOCKER[@]}" ps -a | tail -n +2 | awk '{print $NF}') ; do
     if [[ "${container}" != "${1}"* ]] ; then
       V=3 kube::log::status "Keeping container ${container}"
@@ -335,7 +334,7 @@ function kube::build::short_hash() {
 # Pedantically kill, wait-on and remove a container. The -f -v options
 # to rm don't actually seem to get the job done, so force kill the
 # container, wait to ensure it's stopped, then try the remove. This is
-# a workaround for bug https://github.com/docker/docker/issues/3968.
+# a workaround for bug https://github.com/podman/podman/issues/3968.
 function kube::build::destroy_container() {
   "${DOCKER[@]}" kill "$1" >/dev/null 2>&1 || true
   if [[ $("${DOCKER[@]}" version --format '{{.Server.Version}}') = 17.06.0* ]]; then
@@ -353,13 +352,13 @@ function kube::build::destroy_container() {
 
 
 function kube::build::clean() {
-  if kube::build::has_docker ; then
-    kube::build::docker_delete_old_containers "${KUBE_BUILD_CONTAINER_NAME_BASE}"
-    kube::build::docker_delete_old_containers "${KUBE_RSYNC_CONTAINER_NAME_BASE}"
-    kube::build::docker_delete_old_containers "${KUBE_DATA_CONTAINER_NAME_BASE}"
-    kube::build::docker_delete_old_images "${KUBE_BUILD_IMAGE_REPO}" "${KUBE_BUILD_IMAGE_TAG_BASE}"
+  if kube::build::has_podman ; then
+    kube::build::podman_delete_old_containers "${KUBE_BUILD_CONTAINER_NAME_BASE}"
+    kube::build::podman_delete_old_containers "${KUBE_RSYNC_CONTAINER_NAME_BASE}"
+    kube::build::podman_delete_old_containers "${KUBE_DATA_CONTAINER_NAME_BASE}"
+    kube::build::podman_delete_old_images "${KUBE_BUILD_IMAGE_REPO}" "${KUBE_BUILD_IMAGE_TAG_BASE}"
 
-    V=2 kube::log::status "Cleaning all untagged docker images"
+    V=2 kube::log::status "Cleaning all untagged podman images"
     "${DOCKER[@]}" rmi "$("${DOCKER[@]}" images -q --filter 'dangling=true')" 2> /dev/null || true
   fi
 
@@ -383,45 +382,43 @@ function kube::build::build_image() {
   dd if=/dev/urandom bs=512 count=1 2>/dev/null | LC_ALL=C tr -dc 'A-Za-z0-9' | dd bs=32 count=1 2>/dev/null > "${LOCAL_OUTPUT_BUILD_CONTEXT}/rsyncd.password"
   chmod go= "${LOCAL_OUTPUT_BUILD_CONTEXT}/rsyncd.password"
 
-  kube::build::docker_build "${KUBE_BUILD_IMAGE}" "${LOCAL_OUTPUT_BUILD_CONTEXT}" 'false' "--build-arg=KUBE_CROSS_IMAGE=${KUBE_CROSS_IMAGE} --build-arg=KUBE_CROSS_VERSION=${KUBE_CROSS_VERSION}"
+  kube::build::podman_build "${KUBE_BUILD_IMAGE}" "${LOCAL_OUTPUT_BUILD_CONTEXT}" 'false' "--build-arg=KUBE_CROSS_IMAGE=${KUBE_CROSS_IMAGE} --build-arg=KUBE_CROSS_VERSION=${KUBE_CROSS_VERSION}"
 
   # Clean up old versions of everything
-  kube::build::docker_delete_old_containers "${KUBE_BUILD_CONTAINER_NAME_BASE}" "${KUBE_BUILD_CONTAINER_NAME}"
-  kube::build::docker_delete_old_containers "${KUBE_RSYNC_CONTAINER_NAME_BASE}" "${KUBE_RSYNC_CONTAINER_NAME}"
-  kube::build::docker_delete_old_containers "${KUBE_DATA_CONTAINER_NAME_BASE}" "${KUBE_DATA_CONTAINER_NAME}"
-  kube::build::docker_delete_old_images "${KUBE_BUILD_IMAGE_REPO}" "${KUBE_BUILD_IMAGE_TAG_BASE}" "${KUBE_BUILD_IMAGE_TAG}"
+  kube::build::podman_delete_old_containers "${KUBE_BUILD_CONTAINER_NAME_BASE}" "${KUBE_BUILD_CONTAINER_NAME}"
+  kube::build::podman_delete_old_containers "${KUBE_RSYNC_CONTAINER_NAME_BASE}" "${KUBE_RSYNC_CONTAINER_NAME}"
+  kube::build::podman_delete_old_containers "${KUBE_DATA_CONTAINER_NAME_BASE}" "${KUBE_DATA_CONTAINER_NAME}"
+  kube::build::podman_delete_old_images "${KUBE_BUILD_IMAGE_REPO}" "${KUBE_BUILD_IMAGE_TAG_BASE}" "${KUBE_BUILD_IMAGE_TAG}"
 
   kube::build::ensure_data_container
   kube::build::sync_to_container
 }
 
-# Build a docker image from a Dockerfile.
+# Build a podman image from a Dockerfile.
 # $1 is the name of the image to build
 # $2 is the location of the "context" directory, with the Dockerfile at the root.
-# $3 is the value to set the --pull flag for docker build; true by default
-# $4 is the set of --build-args for docker.
-function kube::build::docker_build() {
-  kube::util::ensure-docker-buildx
-
+# $3 is the value to set the --pull flag for podman build; true by default
+# $4 is the set of --build-args for podman.
+function kube::build::podman_build() {
   local -r image=$1
   local -r context_dir=$2
   local -r pull="${3:-true}"
   local build_args
   IFS=" " read -r -a build_args <<< "$4"
   readonly build_args
-  local -ra build_cmd=("${DOCKER[@]}" buildx build --load -t "${image}" "--pull=${pull}" "${build_args[@]}" "${context_dir}")
+  local -ra build_cmd=("${DOCKER[@]}" build -t "${image}" "--pull=${pull}" "${build_args[@]}" "${context_dir}")
 
   kube::log::status "Building Docker image ${image}"
-  local docker_output
-  docker_output=$(DOCKER_CLI_EXPERIMENTAL=enabled "${build_cmd[@]}" 2>&1) || {
+  local podman_output
+  podman_output=$("${build_cmd[@]}" 2>&1) || {
     cat <<EOF >&2
 +++ Docker build command failed for ${image}
 
-${docker_output}
+${podman_output}
 
 To retry manually, run:
 
-DOCKER_CLI_EXPERIMENTAL=enabled ${build_cmd[*]}
+${build_cmd[*]}
 
 EOF
     return 1
@@ -434,7 +431,7 @@ function kube::build::ensure_data_container() {
   local ret=0
   local code=0
 
-  code=$(docker inspect \
+  code=$(podman inspect \
       -f '{{.State.ExitCode}}' \
       "${KUBE_DATA_CONTAINER_NAME}" 2>/dev/null) || ret=$?
   if [[ "${ret}" == 0 && "${code}" != 0 ]]; then
@@ -443,7 +440,7 @@ function kube::build::ensure_data_container() {
   fi
   if [[ "${ret}" != 0 ]]; then
     kube::log::status "Creating data container ${KUBE_DATA_CONTAINER_NAME}"
-    # We have to ensure the directory exists, or else the docker run will
+    # We have to ensure the directory exists, or else the podman run will
     # create it as root.
     mkdir -p "${LOCAL_OUTPUT_GOPATH}"
     # We want this to run as root to be able to chown, so non-root users can
@@ -454,7 +451,7 @@ function kube::build::ensure_data_container() {
     # intermediates for the Go build. This enables incremental builds across
     # Docker sessions. The *_cgo paths are re-compiled versions of the go std
     # libraries for true static building.
-    local -ra docker_cmd=(
+    local -ra podman_cmd=(
       "${DOCKER[@]}" run
       --volume "${REMOTE_ROOT}"   # white-out the whole output dir
       --volume /usr/local/go/pkg/linux_386_cgo
@@ -473,7 +470,7 @@ function kube::build::ensure_data_container() {
         "${REMOTE_ROOT}"
         /usr/local/go/pkg/
     )
-    "${docker_cmd[@]}"
+    "${podman_cmd[@]}"
   fi
 }
 
@@ -488,13 +485,13 @@ function kube::build::run_build_command() {
 # already been built.
 #
 # Arguments are in the form of
-#  <container name> <extra docker args> -- <command>
+#  <container name> <extra podman args> -- <command>
 function kube::build::run_build_command_ex() {
   [[ $# != 0 ]] || { echo "Invalid input - please specify a container name." >&2; return 4; }
   local container_name="${1}"
   shift
 
-  local -a docker_run_opts=(
+  local -a podman_run_opts=(
     "--name=${container_name}"
     "--user=$(id -u):$(id -g)"
     "--hostname=${HOSTNAME}"
@@ -503,14 +500,14 @@ function kube::build::run_build_command_ex() {
 
   local detach=false
 
-  [[ $# != 0 ]] || { echo "Invalid input - please specify docker arguments followed by --." >&2; return 4; }
-  # Everything before "--" is an arg to docker
+  [[ $# != 0 ]] || { echo "Invalid input - please specify podman arguments followed by --." >&2; return 4; }
+  # Everything before "--" is an arg to podman
   until [ -z "${1-}" ] ; do
     if [[ "$1" == "--" ]]; then
       shift
       break
     fi
-    docker_run_opts+=("$1")
+    podman_run_opts+=("$1")
     if [[ "$1" == "-d" || "$1" == "--detach" ]] ; then
       detach=true
     fi
@@ -525,7 +522,7 @@ function kube::build::run_build_command_ex() {
     shift
   done
 
-  docker_run_opts+=(
+  podman_run_opts+=(
     --env "KUBE_FASTBUILD=${KUBE_FASTBUILD:-false}"
     --env "KUBE_BUILDER_OS=${OSTYPE:-notdetected}"
     --env "KUBE_VERBOSE=${KUBE_VERBOSE}"
@@ -539,14 +536,14 @@ function kube::build::run_build_command_ex() {
 
   # use GOLDFLAGS only if it is set explicitly.
   if [[ -v GOLDFLAGS ]]; then
-    docker_run_opts+=(
+    podman_run_opts+=(
       --env "GOLDFLAGS=${GOLDFLAGS:-}"
     )
   fi
 
   if [[ -n "${DOCKER_CGROUP_PARENT:-}" ]]; then
     kube::log::status "Using ${DOCKER_CGROUP_PARENT} as container cgroup parent"
-    docker_run_opts+=(--cgroup-parent "${DOCKER_CGROUP_PARENT}")
+    podman_run_opts+=(--cgroup-parent "${DOCKER_CGROUP_PARENT}")
   fi
 
   # If we have stdin we can run interactive.  This allows things like 'shell.sh'
@@ -554,17 +551,17 @@ function kube::build::run_build_command_ex() {
   # running in a daemon-ish mode.  So if we don't have a stdin, we explicitly
   # attach stderr/stdout but don't bother asking for a tty.
   if [[ -t 0 ]]; then
-    docker_run_opts+=(--interactive --tty)
+    podman_run_opts+=(--interactive --tty)
   elif [[ "${detach}" == false ]]; then
-    docker_run_opts+=("--attach=stdout" "--attach=stderr")
+    podman_run_opts+=("--attach=stdout" "--attach=stderr")
   fi
 
-  local -ra docker_cmd=(
-    "${DOCKER[@]}" run "${docker_run_opts[@]}" "${KUBE_BUILD_IMAGE}")
+  local -ra podman_cmd=(
+    "${DOCKER[@]}" run "${podman_run_opts[@]}" "${KUBE_BUILD_IMAGE}")
 
   # Clean up container from any previous run
   kube::build::destroy_container "${container_name}"
-  "${docker_cmd[@]}" "${cmd[@]}"
+  "${podman_cmd[@]}" "${cmd[@]}"
   if [[ "${detach}" == false ]]; then
     kube::build::destroy_container "${container_name}"
   fi
@@ -613,7 +610,7 @@ function kube::build::start_rsyncd_container() {
   container_ip=$("${DOCKER[@]}" inspect --format '{{ .NetworkSettings.IPAddress }}' "${KUBE_RSYNC_CONTAINER_NAME}")
 
   # Sometimes we can reach rsync through localhost and a NAT'd port.  Other
-  # times (when we are running in another docker container on the Jenkins
+  # times (when we are running in another podman container on the Jenkins
   # machines) we have to talk directly to the container IP.  There is no one
   # strategy that works in all cases so we test to figure out which situation we
   # are in.
@@ -696,7 +693,7 @@ function kube::build::copy_output() {
     --filter='- /_temp/' \
     --filter='+ /vendor/' \
     --filter='+ /staging/***/Godeps/**' \
-    --filter='+ /_output/dockerized/bin/**' \
+    --filter='+ /_output/podmanized/bin/**' \
     --filter='+ zz_generated.*' \
     --filter='+ generated.proto' \
     --filter='+ *.pb.go' \
