@@ -796,6 +796,14 @@ const (
 	//
 	// Allow fine-tuning of cpumanager policies
 	CPUManagerPolicyOptions featuregate.Feature = "CPUManagerPolicyOptions"
+
+	// owner: @haircommander
+	// kep: http://kep.k8s.io/2364
+	// alpha: v1.22
+	//
+	// Configures the Kubelet to use the CRI to populate pod and container stats, instead of supplimenting with stats from cAdvisor.
+	// Requires the CRI implementation supports supplying the required stats.
+	PodAndContainerStatsFromCRI featuregate.Feature = "PodAndContainerStatsFromCRI"
 )
 
 func init() {
@@ -914,6 +922,7 @@ var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureS
 	KubeletInUserNamespace:                         {Default: false, PreRelease: featuregate.Alpha},
 	MemoryQoS:                                      {Default: false, PreRelease: featuregate.Alpha},
 	CPUManagerPolicyOptions:                        {Default: false, PreRelease: featuregate.Alpha},
+	PodAndContainerStatsFromCRI:                    {Default: false, PreRelease: featuregate.Alpha},
 
 	// inherited features from generic apiserver, relisted here to get a conflict if it is changed
 	// unintentionally on either side:
