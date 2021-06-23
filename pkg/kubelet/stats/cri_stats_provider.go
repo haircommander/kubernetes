@@ -682,6 +682,10 @@ func (p *criStatsProvider) getContainerUsageNanoCores(stats *runtimeapi.Containe
 		return nil
 	}
 
+	if stats.Cpu != nil && stats.Cpu.UsageNanoCores != nil {
+		return &stats.Cpu.UsageNanoCores.Value
+	}
+
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
 
@@ -700,6 +704,9 @@ func (p *criStatsProvider) getContainerUsageNanoCores(stats *runtimeapi.Containe
 func (p *criStatsProvider) getAndUpdateContainerUsageNanoCores(stats *runtimeapi.ContainerStats) *uint64 {
 	if stats == nil || stats.Attributes == nil || stats.Cpu == nil || stats.Cpu.UsageCoreNanoSeconds == nil {
 		return nil
+	}
+	if stats.Cpu.UsageNanoCores != nil {
+		return &stats.Cpu.UsageNanoCores.Value
 	}
 	id := stats.Attributes.Id
 	usage, err := func() (*uint64, error) {
