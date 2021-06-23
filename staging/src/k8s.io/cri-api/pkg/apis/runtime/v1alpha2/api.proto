@@ -1400,15 +1400,6 @@ message FilesystemUsage {
     // This may not equal InodesCapacity - InodesAvailable because the underlying
     // filesystem may also be used for purposes other than storing images.
     UInt64Value inodes_used = 4;
-    // TODO: Unclear how the remaining fields relate to container stats. Is it filled in cAdvisor?
-    // AvailableBytes represents the storage space available (bytes) for the filesystem.
-    UInt64Value available_bytes = 5;
-    // CapacityBytes represents the total capacity (bytes) of the filesystems underlying storage.
-    UInt64Value capacity_bytes = 6;
-    // InodesFree represents the free inodes in the filesystem.
-    UInt64Value inodes_free = 7;
-    // Inodes represents the total inodes in the filesystem.
-    UInt64Value inodes = 8;
 }
 
 message ImageFsInfoResponse {
