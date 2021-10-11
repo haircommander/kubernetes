@@ -131,7 +131,11 @@ func (p *criStatsProvider) listPodStats(updateCPUNanoCoreUsage bool) ([]statsapi
 	}
 
 	if p.podAndContainerStatsFromCRI {
-		return p.listPodStatsStrictlyFromCRI(updateCPUNanoCoreUsage, containerMap, podSandboxMap, &rootFsInfo)
+		podStats, err := p.listPodStatsStrictlyFromCRI(updateCPUNanoCoreUsage, containerMap, podSandboxMap, &rootFsInfo)
+		if err == nil {
+			return podStats, nil
+		}
+		klog.V(5).ErrorS(err, "Unable to update stats strictly from CRI. Does CRI implementation support ListPodSandboxStats?")
 	}
 	return p.listPodStatsPartiallyFromCRI(updateCPUNanoCoreUsage, containerMap, podSandboxMap, &rootFsInfo)
 }
