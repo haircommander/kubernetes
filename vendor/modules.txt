@@ -626,11 +626,12 @@ github.com/opencontainers/runc/libcontainer/utils
 github.com/opencontainers/runc/types
 # github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 => github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/opencontainers/selinux v1.8.2 => github.com/opencontainers/selinux v1.8.2
+# github.com/opencontainers/selinux v1.10.0 => github.com/opencontainers/selinux v1.10.0
 ## explicit
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/go-selinux/label
 github.com/opencontainers/selinux/pkg/pwalk
+github.com/opencontainers/selinux/pkg/pwalkdir
 # github.com/peterbourgon/diskv v2.0.1+incompatible => github.com/peterbourgon/diskv v2.0.1+incompatible
 github.com/peterbourgon/diskv
 # github.com/pkg/errors v0.9.1 => github.com/pkg/errors v0.9.1
@@ -2644,7 +2645,7 @@ sigs.k8s.io/yaml
 # github.com/opencontainers/image-spec => github.com/opencontainers/image-spec v1.0.1
 # github.com/opencontainers/runc => github.com/opencontainers/runc v1.0.3
 # github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
-# github.com/opencontainers/selinux => github.com/opencontainers/selinux v1.8.2
+# github.com/opencontainers/selinux => github.com/opencontainers/selinux v1.10.0
 # github.com/opentracing/opentracing-go => github.com/opentracing/opentracing-go v1.1.0
 # github.com/pascaldekloe/goe => github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c
 # github.com/pelletier/go-toml => github.com/pelletier/go-toml v1.9.3
