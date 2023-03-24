@@ -31,6 +31,7 @@ import (
 	"github.com/opencontainers/runc/libcontainer/cgroups/fscommon"
 	"github.com/opencontainers/runc/libcontainer/cgroups/manager"
 	cgroupsystemd "github.com/opencontainers/runc/libcontainer/cgroups/systemd"
+	"github.com/opencontainers/runc/libcontainer/configs"
 	libcontainerconfigs "github.com/opencontainers/runc/libcontainer/configs"
 	"k8s.io/klog/v2"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
@@ -295,7 +296,7 @@ func (m *cgroupManagerImpl) Destroy(cgroupConfig *CgroupConfig) error {
 	}()
 
 	libcontainerCgroupConfig := m.libctCgroupConfig(cgroupConfig, false)
-	manager, err := manager.New(libcontainerCgroupConfig)
+	manager, err := m.newLibcontainerCgroupManager(libcontainerCgroupConfig)
 	if err != nil {
 		return err
 	}
@@ -438,7 +439,7 @@ func (m *cgroupManagerImpl) Update(cgroupConfig *CgroupConfig) error {
 	}()
 
 	libcontainerCgroupConfig := m.libctCgroupConfig(cgroupConfig, true)
-	manager, err := manager.New(libcontainerCgroupConfig)
+	manager, err := m.newLibcontainerCgroupManager(libcontainerCgroupConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create cgroup manager: %v", err)
 	}
@@ -453,7 +454,7 @@ func (m *cgroupManagerImpl) Create(cgroupConfig *CgroupConfig) error {
 	}()
 
 	libcontainerCgroupConfig := m.libctCgroupConfig(cgroupConfig, true)
-	manager, err := manager.New(libcontainerCgroupConfig)
+	manager, err := m.newLibcontainerCgroupManager(libcontainerCgroupConfig)
 	if err != nil {
 		return err
 	}
@@ -488,6 +489,98 @@ func (m *cgroupManagerImpl) Create(cgroupConfig *CgroupConfig) error {
 	}
 
 	return nil
+}
+
+// newLibcontainerCgroupManager is a helper function for libcontainer's manager.New function.
+// It is needed to workaround behavior in the getSubsystemPath function that determines the paths of the subsystems
+// in the root cgroup by checking the cgroup of pid 1.
+// To disable cpu load balancing for some containers, systemd will need to be moved to a cpuset cgroup off of the root,
+// to allow it to run with load balancing enabled.
+// However, kubepods.slice should still be a child of the root cgroup, and should not be put as a child of systemd's.
+// Only perform this when Workload containers are being managed, cgroup is v1, and the cgroup manager is systemd.
+func (m *cgroupManagerImpl) newLibcontainerCgroupManager(libcontainerCgroupConfig *libcontainerconfigs.Cgroup) (libcontainercgroups.Manager, error) {
+	if !managed.IsEnabled() || libcontainercgroups.IsCgroup2UnifiedMode() && m.useSystemd {
+		return manager.New(libcontainerCgroupConfig)
+	}
+	// In the case where kubelet is managing cpusets, systemd will be put in a separate cgroup. This will mess with Kubelet's expected hierarchy.
+	// We need to construct the paths argument of NewWithPaths manually in this case.
+
+	paths, err := initPaths(libcontainerCgroupConfig)
+	if err != nil {
+		return nil, err
+	}
+	return manager.NewWithPaths(libcontainerCgroupConfig, paths)
+}
+
+// initPaths figures out and returns paths to cgroups.
+// It is largely copied from libcontainer's equivalent function.
+func initPaths(c *configs.Cgroup) (map[string]string, error) {
+	slice := "system.slice"
+	if c.Parent != "" {
+		var err error
+		slice, err = cgroupsystemd.ExpandSlice(c.Parent)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	unit := getUnitName(c)
+
+	paths := make(map[string]string)
+	legacySubsystems := []string{
+		"perf_event",
+		"cpuset",
+		"net_cls",
+		"net_prio",
+		"hugetlb",
+		"cpu",
+		"cpuacct",
+		"memory",
+		"freezer",
+		"devices",
+		"pids",
+		"blkio",
+		"name=systemd",
+	}
+	for _, s := range legacySubsystems {
+		subsystemPath, err := getSubsystemPath(slice, unit, s)
+		if err != nil {
+			// Even if it's `not found` error, we'll return err
+			// because devices cgroup is hard requirement for
+			// container security.
+			if s == "devices" {
+				return nil, err
+			}
+			// Don't fail if a cgroup hierarchy was not found, just skip this subsystem
+			if cgroups.IsNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+		paths[s] = subsystemPath
+	}
+
+	return paths, nil
+}
+
+// Largely copied from libcontainer's equivalent function.
+func getUnitName(c *libcontainerconfigs.Cgroup) string {
+	// by default, we create a scope unless the user explicitly asks for a slice.
+	if !strings.HasSuffix(c.Name, ".slice") {
+		return c.ScopePrefix + "-" + c.Name + ".scope"
+	}
+	return c.Name
+}
+
+// Largely copied from libcontainer's equivalent function, with the exception of
+// the call to GetInitCgroup.
+func getSubsystemPath(slice, unit, subsystem string) (string, error) {
+	mountpoint, err := libcontainercgroups.FindCgroupMountpoint("", subsystem)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(mountpoint, slice, unit), nil
 }
 
 // Scans through all subsystems to find pids associated with specified cgroup.
