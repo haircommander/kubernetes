@@ -203,7 +203,7 @@ func (im *realImageGCManager) Start() {
 		} else {
 			im.initialized = true
 		}
-	}, 5*time.Minute, wait.NeverStop)
+	}, 15*time.Second, wait.NeverStop)
 
 	// Start a goroutine periodically updates image cache.
 	go wait.Until(func() {
