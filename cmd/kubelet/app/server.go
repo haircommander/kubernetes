@@ -35,12 +35,11 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/v22/daemon"
-	"github.com/imdario/mergo"
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"gopkg.in/yaml.v2"
 	"k8s.io/klog/v2"
 	"k8s.io/mount-utils"
 
@@ -311,64 +310,40 @@ is checked every 20 seconds (also configurable with a flag).`,
 func mergeKubeletConfigurations(kubeletConfig *kubeletconfiginternal.KubeletConfiguration, kubeletDropInConfigDir string) error {
 	const dropinFileExtension = ".conf"
 
+	currentJSON, err := json.Marshal(kubeletConfig)
+	if err != nil {
+		return fmt.Errorf("failed to initially marshal current config: %w", err)
+	}
+
 	// Walk through the drop-in directory and update the configuration for each file
-	err := filepath.WalkDir(kubeletDropInConfigDir, func(path string, info fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(kubeletDropInConfigDir, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !info.IsDir() && filepath.Ext(info.Name()) == dropinFileExtension {
-			configBytes, err := os.ReadFile(path)
+			dropinJSON, err := loadDropinConfigFileIntoJSON(path)
 			if err != nil {
-				return fmt.Errorf("failed to read kubelet dropin file, path: %s, error: %w", path, err)
-			}
-			// Unmarshal drop-in configuration into kubeletConfig type
-			var config map[interface{}]interface{}
-			if err := yaml.Unmarshal(configBytes, &config); err != nil {
-				return fmt.Errorf("failed to unmarshal kubelet dropin config:%s, path: %s, error: %w", string(configBytes), path, err)
+				return fmt.Errorf("failed to load kubelet dropin file, path: %s, error: %w", path, err)
 			}
 
-			dropInConfigMap := convertMap(config).(map[string]interface{})
-
-			// Convert map to JSON
-			data, err := json.Marshal(dropInConfigMap)
+			patch, err := jsonpatch.CreateMergePatch(currentJSON, dropinJSON)
 			if err != nil {
-				return fmt.Errorf("failed to convert map to JSON: %w", err)
+				return fmt.Errorf("failed to decode drop-in: %w", err)
 			}
-			// Unmarshal JSON to *kubeletconfiginternal.KubeletConfiguration
-			var dropinConfig kubeletconfiginternal.KubeletConfiguration
-			if err := json.Unmarshal(data, &dropinConfig); err != nil {
-				return fmt.Errorf("failed to unmarshal JSON to KubeletConfiguration: %w", err)
+
+			modifiedJSON, err := jsonpatch.MergePatch(currentJSON, patch)
+			if err != nil {
+				return fmt.Errorf("failed to merge drop-in and current config: %w", err)
 			}
-			// Merge dropinConfig with kubeletConfig
-			if err := mergo.Merge(kubeletConfig, dropinConfig, mergo.WithOverride); err != nil {
-				return fmt.Errorf("failed to merge kubelet drop-in config, path: %s, error: %w", path, err)
-			}
+
+			currentJSON = modifiedJSON
 		}
 		return nil
-	})
-
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to walk through kubelet dropin directory %q: %w", kubeletDropInConfigDir, err)
 	}
 
-	return nil
-}
-
-// convertMap recursively convert map[interface{}]interface{} to map[string]interface{}
-func convertMap(i interface{}) interface{} {
-	switch x := i.(type) {
-	case map[interface{}]interface{}:
-		m2 := map[string]interface{}{}
-		for k, v := range x {
-			m2[fmt.Sprint(k)] = convertMap(v)
-		}
-		return m2
-	case []interface{}:
-		for i, v := range x {
-			x[i] = convertMap(v)
-		}
-	}
-	return i
+	return json.Unmarshal(currentJSON, kubeletConfig)
 }
 
 // newFlagSetWithGlobals constructs a new pflag.FlagSet with global flags registered
@@ -445,6 +420,20 @@ func loadConfigFile(name string) (*kubeletconfiginternal.KubeletConfiguration, e
 		kc.EvictionHard = eviction.DefaultEvictionHard
 	}
 	return kc, err
+}
+
+func loadDropinConfigFileIntoJSON(name string) ([]byte, error) {
+	const errFmt = "failed to load Kubelet config file %s, error %v"
+	// compute absolute path based on current working dir
+	kubeletConfigFile, err := filepath.Abs(name)
+	if err != nil {
+		return nil, fmt.Errorf(errFmt, name, err)
+	}
+	loader, err := configfiles.NewFsLoader(&utilfs.DefaultFs{}, kubeletConfigFile)
+	if err != nil {
+		return nil, fmt.Errorf(errFmt, name, err)
+	}
+	return loader.LoadIntoJSON()
 }
 
 // UnsecuredDependencies returns a Dependencies suitable for being run, or an error if the server setup
