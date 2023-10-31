@@ -20,14 +20,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/test/e2e/framework"
-	"k8s.io/kubernetes/test/e2e_node/services"
 )
 
 var _ = SIGDescribe("Kubelet Config [NodeFeature:KubeletConfigDropInDir]", func() {
@@ -48,36 +44,24 @@ var _ = SIGDescribe("Kubelet Config [NodeFeature:KubeletConfigDropInDir]", func(
 		configDir := framework.TestContext.KubeletConfigDropinDir
 		defer os.RemoveAll(configDir)
 
-		err = services.WriteKubeletConfigFile(&kubeletconfig.KubeletConfiguration{
-			TypeMeta: v1.TypeMeta{
-				Kind:       "KubeletConfiguration",
-				APIVersion: "kubelet.config.k8s.io/v1beta1",
-			},
-			Port:         int32(9090),
-			ReadOnlyPort: int32(10255),
-			SystemReserved: map[string]string{
-				"memory": "1Gi",
-			},
-		}, filepath.Join(configDir, "10-kubelet.conf"))
-		framework.ExpectNoError(err)
-
-		err = services.WriteKubeletConfigFile(&kubeletconfig.KubeletConfiguration{
-			TypeMeta: v1.TypeMeta{
-				Kind:       "KubeletConfiguration",
-				APIVersion: "kubelet.config.k8s.io/v1beta1",
-			},
-			Port:         int32(8080),
-			ReadOnlyPort: int32(10257),
-			SystemReserved: map[string]string{
-				"memory": "2Gi",
-			},
-			ClusterDNS: []string{
-				"192.168.1.1",
-				"192.168.1.5",
-				"192.168.1.8",
-			},
-		}, filepath.Join(configDir, "20-kubelet.conf"))
-		framework.ExpectNoError(err)
+		contents := []byte(`apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+port: 10255
+readOnlyPort: 9090
+systemReserved:
+  memory: 1Gi`)
+		framework.ExpectNoError(os.WriteFile(filepath.Join(configDir, "10-kubelet.conf"), contents, 0755))
+		contents = []byte(`apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+clusterDNS:
+- 192.168.1.1
+- 192.168.1.5
+- 192.168.1.8
+port: 8080
+readOnlyPort: 10257
+systemReserved:
+  memory: 2Gi`)
+		framework.ExpectNoError(os.WriteFile(filepath.Join(configDir, "20-kubelet.conf"), contents, 0755))
 
 		ginkgo.By("Restarting the kubelet")
 		restartKubelet()
@@ -97,6 +81,6 @@ var _ = SIGDescribe("Kubelet Config [NodeFeature:KubeletConfigDropInDir]", func(
 		}
 		initialConfig.ClusterDNS = []string{"192.168.1.1", "192.168.1.5", "192.168.1.8"}
 		// Compare the expected config with the merged config
-		gomega.Expect(reflect.DeepEqual(initialConfig, mergedConfig)).To(gomega.BeTrue(), "Merged kubelet config does not match the expected configuration.")
+		gomega.Expect(initialConfig).To(gomega.BeComparableTo(mergedConfig))
 	})
 })
