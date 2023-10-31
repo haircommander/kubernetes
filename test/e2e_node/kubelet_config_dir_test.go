@@ -20,9 +20,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -47,7 +49,9 @@ var _ = SIGDescribe("Kubelet Config [NodeFeature:KubeletConfigDropInDir]", func(
 		contents := []byte(`apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 port: 10255
-readOnlyPort: 9090
+readOnlyPort: 10257
+clusterDNS:
+- 192.168.1.10
 systemReserved:
   memory: 1Gi`)
 		framework.ExpectNoError(os.WriteFile(filepath.Join(configDir, "10-kubelet.conf"), contents, 0755))
@@ -58,7 +62,7 @@ clusterDNS:
 - 192.168.1.5
 - 192.168.1.8
 port: 8080
-readOnlyPort: 10257
+cpuManagerReconcilePeriod: 0s
 systemReserved:
   memory: 2Gi`)
 		framework.ExpectNoError(os.WriteFile(filepath.Join(configDir, "20-kubelet.conf"), contents, 0755))
@@ -74,12 +78,17 @@ systemReserved:
 		framework.ExpectNoError(err)
 
 		// Replace specific fields in the initial configuration with expectedConfig values
-		initialConfig.Port = int32(8080)
-		initialConfig.ReadOnlyPort = int32(10257)
-		initialConfig.SystemReserved = map[string]string{
+		initialConfig.Port = int32(8080)                  // not overriden by second file, should be retained.
+		initialConfig.ReadOnlyPort = int32(10257)         // overriden by second file.
+		initialConfig.SystemReserved = map[string]string{ // overriden by map in second file.
 			"memory": "2Gi",
 		}
-		initialConfig.ClusterDNS = []string{"192.168.1.1", "192.168.1.5", "192.168.1.8"}
+		initialConfig.ClusterDNS = []string{"192.168.1.1", "192.168.1.5", "192.168.1.8"} // overriden by slice in second file.
+		// This value was explicitly set in the drop-in, make sure it is retained
+		initialConfig.CPUManagerReconcilePeriod = metav1.Duration{Duration: time.Duration(0)}
+		// Meanwhile, this value was not explicitly set, but could have been overriden by a "default" of 0 for the type.
+		// Ensure the true default persists.
+		initialConfig.CPUCFSQuotaPeriod = metav1.Duration{Duration: time.Duration(100000000)}
 		// Compare the expected config with the merged config
 		gomega.Expect(initialConfig).To(gomega.BeComparableTo(mergedConfig))
 	})
