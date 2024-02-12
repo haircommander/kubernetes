@@ -3570,6 +3570,34 @@ func validateHostUsers(spec *core.PodSpec, fldPath *field.Path) field.ErrorList 
 	return allErrs
 }
 
+func validateProcMount(spec *core.PodSpec, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	// Only make the following checks if hostUsers is false (otherwise, the container uses the
+	// same userns as the host, and so there isn't anything to check).
+	if spec.SecurityContext == nil || spec.SecurityContext.HostUsers == nil || !*spec.SecurityContext.HostUsers {
+		return allErrs
+	}
+
+	// We decided to restrict the usage of userns with other host namespaces:
+	// 	https://github.com/kubernetes/kubernetes/pull/111090#discussion_r935994282
+	// The tl;dr is: you can easily run into permission issues that seem unexpected, we don't
+	// know of any good use case and we can always enable them later.
+
+	// Note we already validated above spec.SecurityContext is not nil.
+	if spec.SecurityContext.HostNetwork {
+		allErrs = append(allErrs, field.Forbidden(fldPath.Child("hostNetwork"), "when `pod.Spec.HostUsers` is false"))
+	}
+	if spec.SecurityContext.HostPID {
+		allErrs = append(allErrs, field.Forbidden(fldPath.Child("HostPID"), "when `pod.Spec.HostUsers` is false"))
+	}
+	if spec.SecurityContext.HostIPC {
+		allErrs = append(allErrs, field.Forbidden(fldPath.Child("HostIPC"), "when `pod.Spec.HostUsers` is false"))
+	}
+
+	return allErrs
+}
+
 // validateContainers is called by pod spec and template validation to validate the list of regular containers.
 func validateContainers(containers []core.Container, volumes map[string]core.VolumeSource, podClaimNames sets.Set[string], gracePeriod int64, fldPath *field.Path, opts PodValidationOptions, podRestartPolicy *core.RestartPolicy) field.ErrorList {
 	allErrs := field.ErrorList{}
@@ -4147,6 +4175,7 @@ func ValidatePodSpec(spec *core.PodSpec, podMeta *metav1.ObjectMeta, fldPath *fi
 	allErrs = append(allErrs, validateTopologySpreadConstraints(spec.TopologySpreadConstraints, fldPath.Child("topologySpreadConstraints"), opts)...)
 	allErrs = append(allErrs, validateWindowsHostProcessPod(spec, fldPath)...)
 	allErrs = append(allErrs, validateHostUsers(spec, fldPath)...)
+	allErrs = append(allErrs, validateProcMount(spec, fldPath)...)
 	if len(spec.ServiceAccountName) > 0 {
 		for _, msg := range ValidateServiceAccountName(spec.ServiceAccountName, false) {
 			allErrs = append(allErrs, field.Invalid(fldPath.Child("serviceAccountName"), spec.ServiceAccountName, msg))
