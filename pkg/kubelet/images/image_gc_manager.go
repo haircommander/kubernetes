@@ -277,7 +277,7 @@ func (im *realImageGCManager) detectImages(ctx context.Context, detectTime time.
 		}
 
 		// Set last used time to now if the image is being used.
-		if isImageUsed(imageKey, imagesInUse) {
+		if isImageUsed(image, imagesInUse) {
 			klog.V(5).InfoS("Setting Image ID lastUsed", "imageID", imageKey, "lastUsed", now)
 			im.imageRecords[imageKey].lastUsed = now
 		}
@@ -535,10 +535,15 @@ func (ev byLastUsedAndDetected) Less(i, j int) bool {
 	return ev[i].lastUsed.Before(ev[j].lastUsed)
 }
 
-func isImageUsed(imageID string, imagesInUse sets.String) bool {
+func isImageUsed(image container.Image, imagesInUse sets.String) bool {
 	// Check the image ID.
-	if _, ok := imagesInUse[imageID]; ok {
+	if _, ok := imagesInUse[image.ID]; ok {
 		return true
+	}
+	for _, rd := range image.RepoDigests {
+		if _, ok := imagesInUse[rd]; ok {
+			return true
+		}
 	}
 	return false
 }
