@@ -202,8 +202,7 @@ func NewImageGCManager(runtime container.Runtime, statsProvider StatsProvider, r
 func (im *realImageGCManager) Start() {
 	ctx := context.Background()
 	go wait.Until(func() {
-		_, err := im.detectImages(ctx, time.Now())
-		if err != nil {
+		if err := im.detectImages(ctx, time.Now()); err != nil {
 			klog.InfoS("Failed to monitor images", "err", err)
 		}
 	}, 5*time.Minute, wait.NeverStop)
@@ -225,17 +224,17 @@ func (im *realImageGCManager) GetImageList() ([]container.Image, error) {
 	return im.imageCache.get(), nil
 }
 
-func (im *realImageGCManager) detectImages(ctx context.Context, detectTime time.Time) (sets.String, error) {
+func (im *realImageGCManager) detectImages(ctx context.Context, detectTime time.Time) error {
 	isRuntimeClassInImageCriAPIEnabled := utilfeature.DefaultFeatureGate.Enabled(features.RuntimeClassInImageCriAPI)
 	imagesInUse := sets.NewString()
 
 	images, err := im.runtime.ListImages(ctx)
 	if err != nil {
-		return imagesInUse, err
+		return err
 	}
 	pods, err := im.runtime.GetPods(ctx, true)
 	if err != nil {
-		return imagesInUse, err
+		return err
 	}
 
 	// Make a set of images in use by containers.
@@ -298,7 +297,7 @@ func (im *realImageGCManager) detectImages(ctx context.Context, detectTime time.
 		}
 	}
 
-	return imagesInUse, nil
+	return nil
 }
 
 func (im *realImageGCManager) GarbageCollect(ctx context.Context) error {
@@ -463,8 +462,7 @@ func (im *realImageGCManager) freeImage(ctx context.Context, image evictionInfo)
 // Queries all of the image records and arranges them in a slice of evictionInfo, sorted based on last time used, ignoring images pinned by the runtime.
 func (im *realImageGCManager) imagesInEvictionOrder(ctx context.Context, freeTime time.Time) ([]evictionInfo, error) {
 	isRuntimeClassInImageCriAPIEnabled := utilfeature.DefaultFeatureGate.Enabled(features.RuntimeClassInImageCriAPI)
-	imagesInUse, err := im.detectImages(ctx, freeTime)
-	if err != nil {
+	if err := im.detectImages(ctx, freeTime); err != nil {
 		return nil, err
 	}
 
