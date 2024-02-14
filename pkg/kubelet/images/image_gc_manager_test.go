@@ -97,6 +97,15 @@ func makeImage(id int, size int64) container.Image {
 }
 
 // Make an image with the specified ID.
+func makeImageWithRepoDigests(id int, size int64, repoDigest int) container.Image {
+	return container.Image{
+		ID:          imageID(id),
+		Size:        size,
+		RepoDigests: []string{imageID(repoDigest)},
+	}
+}
+
+// Make an image with the specified ID.
 func makeImageWithRuntimeHandler(id int, size int64, runtimeHandler string) container.Image {
 	if runtimeHandler == "" {
 		return container.Image{
@@ -605,6 +614,60 @@ func TestFreeSpaceRemoveByLeastRecentlyUsed(t *testing.T) {
 	getImagesAndFreeSpace(ctx, t, assert, manager, fakeRuntime, 1024, 1024, 1, time.Now().Add(time.Minute))
 }
 
+func TestFreeSpaceRemoveByLeastRecentlyUsedByRepoDigest(t *testing.T) {
+	ctx := context.Background()
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockStatsProvider := statstest.NewMockProvider(mockCtrl)
+
+	manager, fakeRuntime := newRealImageGCManager(ImageGCPolicy{}, mockStatsProvider)
+	fakeRuntime.ImageList = []container.Image{
+		makeImageWithRepoDigests(100, 1024, 0),
+		makeImageWithRepoDigests(101, 2048, 1),
+	}
+	fakeRuntime.AllPodList = []*containertest.FakePod{
+		{Pod: &container.Pod{
+			Containers: []*container.Container{
+				makeContainer(0),
+				makeContainer(1),
+			},
+		}},
+	}
+
+	// Make 1 be more recently used than 0.
+	err := manager.detectImages(ctx, zero)
+	require.NoError(t, err)
+	fakeRuntime.AllPodList = []*containertest.FakePod{
+		{Pod: &container.Pod{
+			Containers: []*container.Container{
+				makeContainer(1),
+			},
+		}},
+	}
+	// manager.detectImages uses time.Now() to update the image's lastUsed field.
+	// On Windows, consecutive time.Now() calls can return the same timestamp, which would mean
+	// that the second image is NOT newer than the first one.
+	// time.Sleep will result in the timestamp to be updated as well.
+	if goruntime.GOOS == "windows" {
+		time.Sleep(time.Millisecond)
+	}
+	err = manager.detectImages(ctx, time.Now())
+	require.NoError(t, err)
+	fakeRuntime.AllPodList = []*containertest.FakePod{
+		{Pod: &container.Pod{
+			Containers: []*container.Container{},
+		}},
+	}
+	err = manager.detectImages(ctx, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, manager.imageRecordsLen(), 2)
+
+	// We're setting the delete time one minute in the future, so the time the image
+	// was first detected and the delete time are different.
+	assert := assert.New(t)
+	getImagesAndFreeSpace(ctx, t, assert, manager, fakeRuntime, 1024, 1024, 1, time.Now().Add(time.Minute))
+}
+
 func TestFreeSpaceTiesBrokenByDetectedTime(t *testing.T) {
 	ctx := context.Background()
 	mockCtrl := gomock.NewController(t)
@@ -810,6 +873,64 @@ func TestGarbageCollectImageTooOld(t *testing.T) {
 		{Pod: &container.Pod{
 			Containers: []*container.Container{
 				makeContainer(1),
+			},
+		}},
+	}
+
+	fakeClock := testingclock.NewFakeClock(time.Now())
+	t.Log(fakeClock.Now())
+	images, err := manager.imagesInEvictionOrder(ctx, fakeClock.Now())
+	require.NoError(t, err)
+	require.Equal(t, len(images), 1)
+	// Simulate pod having just used this image, but having been GC'd
+	images[0].lastUsed = fakeClock.Now()
+
+	// First GC round should not GC remaining image, as it was used too recently.
+	assert := assert.New(t)
+	images, err = manager.freeOldImages(ctx, images, fakeClock.Now())
+	require.NoError(t, err)
+	assert.Len(images, 1)
+	assert.Len(fakeRuntime.ImageList, 2)
+
+	// move clock by a millisecond past maxAge duration, then 1 image will be garbage collected
+	fakeClock.Step(policy.MaxAge + 1)
+	images, err = manager.freeOldImages(ctx, images, fakeClock.Now())
+	require.NoError(t, err)
+	assert.Len(images, 0)
+	assert.Len(fakeRuntime.ImageList, 1)
+}
+
+func TestGarbageCollectImageTooOldMatchWithRepoDigests(t *testing.T) {
+	ctx := context.Background()
+	policy := ImageGCPolicy{
+		HighThresholdPercent: 90,
+		LowThresholdPercent:  80,
+		MinAge:               0,
+		MaxAge:               time.Minute * 1,
+	}
+	fakeRuntime := &containertest.FakeRuntime{}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockStatsProvider := statstest.NewMockProvider(mockCtrl)
+	manager := &realImageGCManager{
+		runtime:       fakeRuntime,
+		policy:        policy,
+		imageRecords:  make(map[string]*imageRecord),
+		statsProvider: mockStatsProvider,
+		recorder:      &record.FakeRecorder{},
+	}
+
+	fakeRuntime.ImageList = []container.Image{
+		// Sometimes, the runtime returns an ImageRef in ContainerStatus
+		// that matches a RepoDigest (container-0) instead of the ID (container-100)
+		makeImageWithRepoDigests(100, 1024, 0),
+		makeImageWithRepoDigests(101, 1024, 1),
+	}
+	// 1 image is in use, and another one is not old enough
+	fakeRuntime.AllPodList = []*containertest.FakePod{
+		{Pod: &container.Pod{
+			Containers: []*container.Container{
+				makeContainer(0),
 			},
 		}},
 	}
