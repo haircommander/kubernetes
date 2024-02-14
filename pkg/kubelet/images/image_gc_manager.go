@@ -474,10 +474,6 @@ func (im *realImageGCManager) imagesInEvictionOrder(ctx context.Context, freeTim
 	// Get all images in eviction order.
 	images := make([]evictionInfo, 0, len(im.imageRecords))
 	for image, record := range im.imageRecords {
-		if isImageUsed(image, imagesInUse) {
-			klog.V(5).InfoS("Image ID is being used", "imageID", image)
-			continue
-		}
 		// Check if image is pinned, prevent garbage collection
 		if record.pinned {
 			klog.V(5).InfoS("Image is pinned, skipping garbage collection", "imageID", image)
