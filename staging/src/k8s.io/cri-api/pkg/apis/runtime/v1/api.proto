@@ -97,6 +97,10 @@ service RuntimeService {
     rpc Attach(AttachRequest) returns (AttachResponse) {}
     // PortForward prepares a streaming endpoint to forward ports from a PodSandbox.
     rpc PortForward(PortForwardRequest) returns (PortForwardResponse) {}
+    // CopyToContainer copies a file to a container
+    rpc CopyToContainer(CopyToContainerRequest) returns (CopyToContainerResponse) {}
+    // CopyToContainer copies a file from a container
+    rpc CopyFromContainer(CopyFromContainerRequest) returns (CopyFromContainerResponse) {}
 
     // ContainerStats returns stats of the container. If the container does not
     // exist, the call returns an error.
@@ -1446,6 +1450,37 @@ message PortForwardRequest {
 message PortForwardResponse {
     // Fully qualified URL of the port-forward streaming server.
     string url = 1;
+}
+
+message CopyToContainerRequest {
+    // ID of the container to which to forward the port.
+    string container_id = 1;
+    // Size of the file to be copied
+    uint64 size = 2;
+    // Checksum of the file
+    uint32 checksum = 3;
+}
+
+message CopyToContainerResponse {
+    // Fully qualified URL of the copy streaming server.
+    string url = 1;
+}
+
+message CopyFromContainerRequest {
+    // ID of the container to which to forward the port.
+    string container_id = 1;
+    // Path of the location of the file
+    // Must be a fully qualified path--i.e. no relative paths are allowed.
+    string path = 2;
+}
+
+message CopyFromContainerResponse {
+    // Fully qualified URL of the copy streaming server.
+    string url = 1;
+    // Size of the file being copied
+    uint64 size = 2;
+    // Checksum of the file
+    uint32 checksum = 3;
 }
 
 message ImageFilter {
