@@ -36,6 +36,7 @@ import (
 	remotecommandconsts "k8s.io/apimachinery/pkg/util/remotecommand"
 	"k8s.io/client-go/tools/remotecommand"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
+	"k8s.io/kubelet/pkg/cri/streaming/copier"
 	"k8s.io/kubelet/pkg/cri/streaming/portforward"
 	remotecommandserver "k8s.io/kubelet/pkg/cri/streaming/remotecommand"
 )
@@ -65,6 +66,8 @@ type Runtime interface {
 	Exec(ctx context.Context, containerID string, cmd []string, in io.Reader, out, err io.WriteCloser, tty bool, resize <-chan remotecommand.TerminalSize) error
 	Attach(ctx context.Context, containerID string, in io.Reader, out, err io.WriteCloser, tty bool, resize <-chan remotecommand.TerminalSize) error
 	PortForward(ctx context.Context, podSandboxID string, port int32, stream io.ReadWriteCloser) error
+	CopyToContainer(ctx context.Context, container string, size uint64, checksum uint32, out io.WriteCloser) error
+	CopyFromContainer(ctx context.Context, container string, path string, in io.Reader) error
 }
 
 // Config defines the options used for running the stream server.
@@ -360,6 +363,51 @@ func (s *server) servePortForward(req *restful.Request, resp *restful.Response) 
 		s.config.SupportedPortForwardProtocols)
 }
 
+func (s *server) serveCopyTo(req *restful.Request, resp *restful.Response) {
+	token := req.PathParameter("token")
+	cachedRequest, ok := s.cache.Consume(token)
+	if !ok {
+		http.NotFound(resp.ResponseWriter, req.Request)
+		return
+	}
+	cp, ok := cachedRequest.(*runtimeapi.CopyToContainerRequest)
+	if !ok {
+		http.NotFound(resp.ResponseWriter, req.Request)
+		return
+	}
+
+	copier.ServeCopyTo(
+		resp.ResponseWriter,
+		req.Request,
+		s.runtime,
+		cp.ContainerId,
+		cp.Size_,
+		cp.Checksum,
+		s.config.StreamIdleTimeout)
+}
+
+func (s *server) serveCopyFrom(req *restful.Request, resp *restful.Response) {
+	token := req.PathParameter("token")
+	cachedRequest, ok := s.cache.Consume(token)
+	if !ok {
+		http.NotFound(resp.ResponseWriter, req.Request)
+		return
+	}
+	cp, ok := cachedRequest.(*runtimeapi.CopyFromContainerRequest)
+	if !ok {
+		http.NotFound(resp.ResponseWriter, req.Request)
+		return
+	}
+
+	copier.ServeCopyFrom(
+		resp.ResponseWriter,
+		req.Request,
+		s.runtime,
+		cp.ContainerId,
+		cp.Path,
+		s.config.StreamIdleTimeout)
+}
+
 // criAdapter wraps the Runtime functions to conform to the remotecommand interfaces.
 // The adapter binds the container ID to the container name argument, and the pod sandbox ID to the pod name.
 type criAdapter struct {
@@ -369,6 +417,7 @@ type criAdapter struct {
 var _ remotecommandserver.Executor = &criAdapter{}
 var _ remotecommandserver.Attacher = &criAdapter{}
 var _ portforward.PortForwarder = &criAdapter{}
+var _ copier.Copier = &criAdapter{}
 
 func (a *criAdapter) ExecInContainer(ctx context.Context, podName string, podUID types.UID, container string, cmd []string, in io.Reader, out, err io.WriteCloser, tty bool, resize <-chan remotecommand.TerminalSize, timeout time.Duration) error {
 	return a.Runtime.Exec(ctx, container, cmd, in, out, err, tty, resize)
@@ -380,4 +429,12 @@ func (a *criAdapter) AttachContainer(ctx context.Context, podName string, podUID
 
 func (a *criAdapter) PortForward(ctx context.Context, podName string, podUID types.UID, port int32, stream io.ReadWriteCloser) error {
 	return a.Runtime.PortForward(ctx, podName, port, stream)
+}
+
+func (a *criAdapter) CopyToContainer(ctx context.Context, container string, size uint64, checksum uint32, out io.WriteCloser) error {
+	return a.Runtime.CopyToContainer(ctx, container, size, checksum, out)
+}
+
+func (a *criAdapter) CopyFromContainer(ctx context.Context, container string, path string, in io.Reader) error {
+	return a.Runtime.CopyFromContainer(ctx, container, path, in)
 }
