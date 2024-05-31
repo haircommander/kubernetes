@@ -895,3 +895,45 @@ func (r *remoteRuntimeService) RuntimeConfig(ctx context.Context) (*runtimeapi.R
 
 	return resp, nil
 }
+
+// CopyToContainer copies a file to a container
+func (r *remoteRuntimeService) CopyToContainer(ctx context.Context, req *runtimeapi.CopyToContainerRequest) (*runtimeapi.CopyToContainerResponse, error) {
+	klog.V(10).InfoS("[RemoteRuntimeService] CopyToContainer", "containerID", req.ContainerId, "timeout", r.timeout)
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+
+	resp, err := r.runtimeClient.CopyToContainer(ctx, req)
+	if err != nil {
+		klog.ErrorS(err, "ListPodSandboxMetrics from runtime service failed")
+		return nil, err
+	}
+	klog.V(10).InfoS("[RemoteRuntimeService] CopyToContainer Response", "containerID", req.ContainerId)
+
+	if resp.Url == "" {
+		err := errors.New("URL is not set")
+		klog.ErrorS(err, "CopyToContainer failed")
+		return nil, err
+	}
+	return resp, nil
+}
+
+// CopyFromContainer copies a file from a container
+func (r *remoteRuntimeService) CopyFromContainer(ctx context.Context, req *runtimeapi.CopyFromContainerRequest) (*runtimeapi.CopyFromContainerResponse, error) {
+	klog.V(10).InfoS("[RemoteRuntimeService] CopyFromContainer", "containerID", req.ContainerId, "timeout", r.timeout)
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+
+	resp, err := r.runtimeClient.CopyFromContainer(ctx, req)
+	if err != nil {
+		klog.ErrorS(err, "ListPodSandboxMetrics from runtime service failed")
+		return nil, err
+	}
+	klog.V(10).InfoS("[RemoteRuntimeService] CopyFromContainer Response", "containerID", req.ContainerId)
+
+	if resp.Url == "" {
+		err := errors.New("URL is not set")
+		klog.ErrorS(err, "CopyFromContainer failed")
+		return nil, err
+	}
+	return resp, nil
+}

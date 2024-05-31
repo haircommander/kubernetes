@@ -366,3 +366,13 @@ func (f *RemoteRuntime) RuntimeConfig(ctx context.Context, req *kubeapi.RuntimeC
 
 	return resp, nil
 }
+
+// CopyToContainer copies a file to a container
+func (f *RemoteRuntime) CopyToContainer(ctx context.Context, req *kubeapi.CopyToContainerRequest) (*kubeapi.CopyToContainerResponse, error) {
+	return f.RuntimeService.CopyToContainer(ctx, req)
+}
+
+// CopyToContainer copies a file to a container
+func (f *RemoteRuntime) CopyFromContainer(ctx context.Context, req *kubeapi.CopyFromContainerRequest) (*kubeapi.CopyFromContainerResponse, error) {
+	return f.RuntimeService.CopyFromContainer(ctx, req)
+}

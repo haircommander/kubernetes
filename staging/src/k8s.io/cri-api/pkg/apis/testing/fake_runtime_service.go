@@ -794,3 +794,29 @@ func (r *FakeRuntimeService) RuntimeConfig(_ context.Context) (*runtimeapi.Runti
 
 	return &runtimeapi.RuntimeConfigResponse{Linux: r.FakeLinuxConfiguration}, nil
 }
+
+// CopyToContainer pretends to copy a file to a container
+func (r *FakeRuntimeService) CopyToContainer(_ context.Context, _ *runtimeapi.CopyToContainerRequest) (*runtimeapi.CopyToContainerResponse, error) {
+	r.Lock()
+	defer r.Unlock()
+
+	r.Called = append(r.Called, "CopyToContainer")
+	if err := r.popError("CopyToContainer"); err != nil {
+		return nil, err
+	}
+
+	return &runtimeapi.CopyToContainerResponse{}, nil
+}
+
+// CopyFromContainer pretends to copy a file to a container
+func (r *FakeRuntimeService) CopyFromContainer(_ context.Context, _ *runtimeapi.CopyFromContainerRequest) (*runtimeapi.CopyFromContainerResponse, error) {
+	r.Lock()
+	defer r.Unlock()
+
+	r.Called = append(r.Called, "CopyFromContainer")
+	if err := r.popError("CopyFromContainer"); err != nil {
+		return nil, err
+	}
+
+	return &runtimeapi.CopyFromContainerResponse{}, nil
+}
