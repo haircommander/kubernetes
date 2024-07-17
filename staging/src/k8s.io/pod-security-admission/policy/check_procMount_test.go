@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestProcMount(t *testing.T) {
@@ -29,13 +30,15 @@ func TestProcMount(t *testing.T) {
 
 	hostUsers := false
 	tests := []struct {
-		name         string
-		pod          *corev1.Pod
-		expectReason string
-		expectDetail string
+		name                                     string
+		pod                                      *corev1.Pod
+		expectReason                             string
+		expectDetail                             string
+		validationFunc                           func(*metav1.ObjectMeta, *corev1.PodSpec) CheckResult
+		enableUserNamespacesPodSecurityStandards bool
 	}{
 		{
-			name: "procMount",
+			name: "procMount baseline without usernamespace",
 			pod: &corev1.Pod{Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
 					{Name: "a", SecurityContext: nil},
@@ -46,14 +49,53 @@ func TestProcMount(t *testing.T) {
 				},
 				HostUsers: &hostUsers,
 			}},
-			expectReason: `procMount`,
-			expectDetail: `containers "d", "e" must not set securityContext.procMount to "Unmasked", "other"`,
+			expectReason:                             `procMount`,
+			expectDetail:                             `containers "d", "e" must not set securityContext.procMount to "Unmasked", "other"`,
+			validationFunc:                           procMount1_31Baseline,
+			enableUserNamespacesPodSecurityStandards: false,
+		},
+		{
+			name: "procMount baseline with usernamespace",
+			pod: &corev1.Pod{Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{Name: "a", SecurityContext: nil},
+					{Name: "b", SecurityContext: &corev1.SecurityContext{}},
+					{Name: "c", SecurityContext: &corev1.SecurityContext{ProcMount: &defaultValue}},
+					{Name: "d", SecurityContext: &corev1.SecurityContext{ProcMount: &unmaskedValue}},
+					{Name: "e", SecurityContext: &corev1.SecurityContext{ProcMount: &otherValue}},
+				},
+				HostUsers: &hostUsers,
+			}},
+			expectReason:                             `procMount`,
+			expectDetail:                             `container "e" must not set securityContext.procMount to "other"`,
+			validationFunc:                           procMount1_31Baseline,
+			enableUserNamespacesPodSecurityStandards: true,
+		},
+		{
+			name: "procMount restricted",
+			pod: &corev1.Pod{Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{Name: "a", SecurityContext: nil},
+					{Name: "b", SecurityContext: &corev1.SecurityContext{}},
+					{Name: "c", SecurityContext: &corev1.SecurityContext{ProcMount: &defaultValue}},
+					{Name: "d", SecurityContext: &corev1.SecurityContext{ProcMount: &unmaskedValue}},
+					{Name: "e", SecurityContext: &corev1.SecurityContext{ProcMount: &otherValue}},
+				},
+				HostUsers: &hostUsers,
+			}},
+			expectReason:                             `procMount`,
+			expectDetail:                             `containers "d", "e" must not set securityContext.procMount to "Unmasked", "other"`,
+			validationFunc:                           procMount_1_0,
+			enableUserNamespacesPodSecurityStandards: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := procMount_1_0(&tc.pod.ObjectMeta, &tc.pod.Spec)
+			if tc.enableUserNamespacesPodSecurityStandards {
+				RelaxPolicyForUserNamespacePods(true)
+			}
+			result := tc.validationFunc(&tc.pod.ObjectMeta, &tc.pod.Spec)
 			if result.Allowed {
 				t.Fatal("expected disallowed")
 			}

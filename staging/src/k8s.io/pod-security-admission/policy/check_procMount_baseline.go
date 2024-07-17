@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2024 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -35,6 +35,8 @@ spec.initContainers[*].securityContext.procMount
 
 **Allowed Values:** undefined/null, "Default"
 
+However, if the pod is in a user namespace (`hostUsers: false`),
+all values are allowed.
 */
 
 func init() {
@@ -46,18 +48,30 @@ func init() {
 // in 1.0+
 func CheckProcMount() Check {
 	return Check{
-		ID:    "procMount",
+		ID:    "procMount_baseline",
 		Level: api.LevelBaseline,
 		Versions: []VersionedCheck{
 			{
 				MinimumVersion: api.MajorMinorVersion(1, 0),
 				CheckPod:       procMount_1_0,
 			},
+			{
+				MinimumVersion: api.MajorMinorVersion(1, 31),
+				CheckPod:       procMount1_31Baseline,
+			},
 		},
 	}
 }
 
 func procMount_1_0(podMetadata *metav1.ObjectMeta, podSpec *corev1.PodSpec) CheckResult {
+	return procMount(podMetadata, podSpec, false)
+}
+
+func procMount1_31Baseline(podMetadata *metav1.ObjectMeta, podSpec *corev1.PodSpec) CheckResult {
+	return procMount(podMetadata, podSpec, true)
+}
+
+func procMount(podMetadata *metav1.ObjectMeta, podSpec *corev1.PodSpec, relaxForUserNS bool) CheckResult {
 	var badContainers []string
 	forbiddenProcMountTypes := sets.NewString()
 	visitContainers(podSpec, func(container *corev1.Container) {
@@ -67,6 +81,9 @@ func procMount_1_0(podMetadata *metav1.ObjectMeta, podSpec *corev1.PodSpec) Chec
 		}
 		// allow if proc mount is not set.
 		if container.SecurityContext.ProcMount == nil {
+			return
+		}
+		if relaxForUserNS && relaxPolicyForUserNamespacePod(podSpec) && *container.SecurityContext.ProcMount == corev1.UnmaskedProcMount {
 			return
 		}
 		// check if the value of the proc mount type is valid.
