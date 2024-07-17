@@ -24,7 +24,7 @@ import (
 
 func init() {
 	hostUsers := false
-	fixtureData_1_0 := fixtureGenerator{
+	fixtureData1_0 := fixtureGenerator{
 		expectErrorSubstring: "procMount",
 		generatePass: func(p *corev1.Pod) []*corev1.Pod {
 			p = ensureSecurityContext(p)
@@ -58,8 +58,62 @@ func init() {
 		},
 	}
 
+	fixtureData1_31 := fixtureGenerator{
+		expectErrorSubstring: "procMount",
+		generatePass: func(p *corev1.Pod) []*corev1.Pod {
+			p = ensureSecurityContext(p)
+			return []*corev1.Pod{
+				// set proc mount of container and init container to a valid value
+				tweak(p, func(copy *corev1.Pod) {
+					validProcMountType := corev1.DefaultProcMount
+					copy.Spec.Containers[0].SecurityContext.ProcMount = &validProcMountType
+					copy.Spec.InitContainers[0].SecurityContext.ProcMount = &validProcMountType
+					copy.Spec.HostUsers = &hostUsers
+				}),
+				// set proc mount of container to a forbidden value
+				tweak(p, func(copy *corev1.Pod) {
+					unmaskedProcMountType := corev1.UnmaskedProcMount
+					copy.Spec.Containers[0].SecurityContext.ProcMount = &unmaskedProcMountType
+					copy.Spec.HostUsers = &hostUsers
+				}),
+				// set proc mount of init container to a forbidden value
+				tweak(p, func(copy *corev1.Pod) {
+					unmaskedProcMountType := corev1.UnmaskedProcMount
+					copy.Spec.InitContainers[0].SecurityContext.ProcMount = &unmaskedProcMountType
+					copy.Spec.HostUsers = &hostUsers
+				}),
+			}
+		},
+		failRequiresFeatures: []featuregate.Feature{"ProcMountType"},
+		generateFail: func(p *corev1.Pod) []*corev1.Pod {
+			p = ensureSecurityContext(p)
+			return []*corev1.Pod{
+				// set proc mount of container to a forbidden value
+				tweak(p, func(copy *corev1.Pod) {
+					invalidProcMountType := corev1.ProcMountType("other")
+					copy.Spec.Containers[0].SecurityContext.ProcMount = &invalidProcMountType
+					copy.Spec.HostUsers = &hostUsers
+				}),
+				// set proc mount of init container to a forbidden value
+				tweak(p, func(copy *corev1.Pod) {
+					invalidProcMountType := corev1.ProcMountType("other")
+					copy.Spec.InitContainers[0].SecurityContext.ProcMount = &invalidProcMountType
+					copy.Spec.HostUsers = &hostUsers
+				}),
+			}
+		},
+	}
+
 	registerFixtureGenerator(
-		fixtureKey{level: api.LevelBaseline, version: api.MajorMinorVersion(1, 0), check: "procMount"},
-		fixtureData_1_0,
+		fixtureKey{level: api.LevelBaseline, version: api.MajorMinorVersion(1, 0), check: "procMount_restricted"},
+		fixtureData1_0,
+	)
+	registerFixtureGenerator(
+		fixtureKey{level: api.LevelBaseline, version: api.MajorMinorVersion(1, 31), check: "procMount_baseline"},
+		fixtureData1_31,
+	)
+	registerFixtureGenerator(
+		fixtureKey{level: api.LevelBaseline, version: api.MajorMinorVersion(1, 0), check: "procMount_baseline"},
+		fixtureData1_0,
 	)
 }
