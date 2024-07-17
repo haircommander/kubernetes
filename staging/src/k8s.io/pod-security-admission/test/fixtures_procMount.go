@@ -70,6 +70,16 @@ func init() {
 					copy.Spec.InitContainers[0].SecurityContext.ProcMount = &validProcMountType
 					copy.Spec.HostUsers = &hostUsers
 				}),
+				// When the UserNamespacesPodSecurityStandards feature is dropped, we should add tests
+				// that test that Unmasked is allowed when a pod has hostUsers false, but they fail on the GA tests now.
+			}
+		},
+		failRequiresFeatures: []featuregate.Feature{"ProcMountType"},
+		generateFail: func(p *corev1.Pod) []*corev1.Pod {
+			p = ensureSecurityContext(p)
+			// Note, these should not fail if the feature gate UserNamespacesPodSecurityPolicy is set, but
+			// this is not done by default, so we don't test this situation by default.
+			return []*corev1.Pod{
 				// set proc mount of container to a forbidden value
 				tweak(p, func(copy *corev1.Pod) {
 					unmaskedProcMountType := corev1.UnmaskedProcMount
@@ -80,24 +90,6 @@ func init() {
 				tweak(p, func(copy *corev1.Pod) {
 					unmaskedProcMountType := corev1.UnmaskedProcMount
 					copy.Spec.InitContainers[0].SecurityContext.ProcMount = &unmaskedProcMountType
-					copy.Spec.HostUsers = &hostUsers
-				}),
-			}
-		},
-		failRequiresFeatures: []featuregate.Feature{"ProcMountType"},
-		generateFail: func(p *corev1.Pod) []*corev1.Pod {
-			p = ensureSecurityContext(p)
-			return []*corev1.Pod{
-				// set proc mount of container to a forbidden value
-				tweak(p, func(copy *corev1.Pod) {
-					invalidProcMountType := corev1.ProcMountType("other")
-					copy.Spec.Containers[0].SecurityContext.ProcMount = &invalidProcMountType
-					copy.Spec.HostUsers = &hostUsers
-				}),
-				// set proc mount of init container to a forbidden value
-				tweak(p, func(copy *corev1.Pod) {
-					invalidProcMountType := corev1.ProcMountType("other")
-					copy.Spec.InitContainers[0].SecurityContext.ProcMount = &invalidProcMountType
 					copy.Spec.HostUsers = &hostUsers
 				}),
 			}
