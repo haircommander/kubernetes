@@ -33,8 +33,9 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/klog/v2"
 	cadvisortest "k8s.io/kubernetes/pkg/kubelet/cadvisor/testing"
-
 	"k8s.io/mount-utils"
 )
 
@@ -341,4 +342,46 @@ func TestNewPodContainerManager(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSetupNode(t *testing.T) {
+	subsystems, err := GetCgroupSubsystems()
+	if err != nil {
+		t.Errorf("failed to get mounted cgroup subsystems: %v", err)
+	}
+	cgm := NewCgroupManager(subsystems, "systemd")
+	cgr := NewCgroupName(ParseCgroupfsToCgroupName("/"), "test-"+string(uuid.NewUUID()))
+	mgr := &containerManagerImpl{
+		cgroupManager: cgm,
+		qosContainerManager: &qosContainerManagerImpl{
+			cgroupManager: cgm,
+			qosContainersInfo: QOSContainersInfo{
+				Guaranteed: CgroupName{"guaranteed"},
+				BestEffort: CgroupName{"besteffort"},
+				Burstable:  CgroupName{"burstable"},
+			},
+			cgroupRoot: cgr,
+		},
+		cgroupRoot: cgr,
+		NodeConfig: NodeConfig{
+			CgroupsPerQOS: true,
+		},
+	}
+
+	defer func() {
+		if err := mgr.cgroupManager.Destroy(&CgroupConfig{
+			Name: mgr.cgroupRoot,
+		}); err != nil {
+			klog.ErrorS(err, "Failed to destroy cgroup", "cgroupName", mgr.cgroupRoot)
+			t.Errorf("Got unexpected err cleaning cgruop %v", err)
+		}
+	}()
+
+	if err := mgr.createNodeAllocatableCgroups(); err != nil {
+		t.Errorf("Got unexpected err creating allocatable cgroups %v", err)
+	}
+	if err := mgr.qosContainerManager.Start(mgr.GetNodeAllocatableAbsolute, func() []*v1.Pod { return []*v1.Pod{} }); err != nil {
+		t.Errorf("Got unexpected err starting manager %v", err)
+	}
+	t.Errorf("beep")
 }

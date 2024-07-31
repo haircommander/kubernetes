@@ -60,6 +60,7 @@ func (c *cgroupV2impl) Validate(name CgroupName) error {
 	if err != nil {
 		return fmt.Errorf("could not read controllers for cgroup %q: %w", name, err)
 	}
+	fmt.Printf("hoping for %v got %v\n", neededControllers, enabledControllers)
 	difference := neededControllers.Difference(enabledControllers)
 	if difference.Len() > 0 {
 		return fmt.Errorf("cgroup %q has some missing controllers: %v", name, strings.Join(sets.List(difference), ", "))
