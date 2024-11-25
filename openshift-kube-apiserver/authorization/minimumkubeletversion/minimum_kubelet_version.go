@@ -23,22 +23,16 @@ type minimumKubeletVersionAuth struct {
 
 // Creates a new minimumKubeletVersionAuth object, which is an authorizer that checks
 // whether nodes are new enough to be authorized.
-func NewMinimumKubeletVersion(minVersionStr string,
+func NewMinimumKubeletVersion(minVersion *semver.Version,
 	nodeIdentifier nodeidentifier.NodeIdentifier,
 	nodeInformer cache.SharedIndexInformer,
 	nodeLister v1listers.NodeLister,
 ) *minimumKubeletVersionAuth {
-	var minVersionPtr *semver.Version
-	if len(minVersionStr) != 0 {
-		v := semver.MustParse(minVersionStr)
-		minVersionPtr = &v
-	}
-
 	return &minimumKubeletVersionAuth{
 		nodeIdentifier: nodeIdentifier,
 		nodeInformer:   nodeInformer,
 		nodeLister:     nodeLister,
-		minVersion:     minVersionPtr,
+		minVersion:     minVersion,
 	}
 }
 
