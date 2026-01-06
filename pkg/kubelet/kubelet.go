@@ -2718,20 +2718,17 @@ func handleProbeSync(kl *Kubelet, update proberesults.Update, handler SyncHandle
 // HandlePodAdditions is the callback in SyncHandler for pods being added from
 // a config source.
 func (kl *Kubelet) HandlePodAdditions(pods []*v1.Pod) {
+	var mirrorPod *v1.Pod
 	start := kl.clock.Now()
 	sort.Sort(sliceutils.PodsByCreationTime(pods))
 	var pendingResizes []types.UID
 	for _, pod := range pods {
-		// Always add the pod to the pod manager. Kubelet relies on the pod
-		// manager as the source of truth for the desired state. If a pod does
-		// not exist in the pod manager, it means that it has been deleted in
-		// the apiserver and no action (other than cleanup) is required.
-		kl.podManager.AddPod(pod)
-
 		kl.podCertificateManager.TrackPod(context.TODO(), pod)
 
-		pod, mirrorPod, wasMirror := kl.podManager.GetPodAndMirrorPod(pod)
-		if wasMirror {
+		if kubetypes.IsMirrorPod(pod) {
+			// We need to add the pod here to get the mirror pod, we'll add it below after allocation manager passes for not mirror pods
+			kl.podManager.AddPod(pod)
+			pod, mirrorPod, _ = kl.podManager.GetPodAndMirrorPod(pod)
 			if pod == nil {
 				klog.V(2).InfoS("Unable to find pod for mirror pod, skipping", "mirrorPod", klog.KObj(mirrorPod), "mirrorPodUID", mirrorPod.UID)
 				continue
@@ -2765,6 +2762,10 @@ func (kl *Kubelet) HandlePodAdditions(pods []*v1.Pod) {
 				recordAdmissionRejection(reason)
 				continue
 			}
+
+			// Now, we can add the pod, as it has been accepted as allocatable.
+			kl.podManager.AddPod(pod)
+			pod, mirrorPod, _ = kl.podManager.GetPodAndMirrorPod(pod)
 
 			if utilfeature.DefaultFeatureGate.Enabled(features.InPlacePodVerticalScaling) {
 				// Backfill the queue of pending resizes, but only after all the pods have
