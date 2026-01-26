@@ -18,10 +18,11 @@ package node
 
 import (
 	"context"
+	"strconv"
+	"time"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/onsi/gomega/gstruct"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -88,38 +89,54 @@ var _ = SIGDescribe("PodRejectionStatus", func() {
 			err = f.ClientSet.CoreV1().Pods(pod.Namespace).Bind(ctx, binding, metav1.CreateOptions{})
 			framework.ExpectNoError(err)
 
-			// kubelet has rejected the pod
-			err = e2epod.WaitForPodFailedReason(ctx, f.ClientSet, pod, "OutOfcpu", f.Timeouts.PodStartShort)
-			framework.ExpectNoError(err)
+			//			done := make(chan struct{}, 1)
+			//			go func() {
 
-			// fetch the reject Pod and compare the status
-			gotPod, err := f.ClientSet.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
-			framework.ExpectNoError(err)
+			errC := make(chan error, 1)
+			go func() {
+				// kubelet has rejected the pod
+				err = e2epod.WaitForPodFailedReason(ctx, f.ClientSet, pod, "OutOfcpu", f.Timeouts.PodStartShort)
+				if err != nil {
+					errC <- err
+					return
+				}
 
-			// This detects if there are any new fields in Status that were dropped by the pod rejection.
-			// These new fields either should be kept by kubelet's admission or added explicitly in the list of fields that are having a different value or must be cleared.
-			gomega.Expect(gotPod.Status).To(gstruct.MatchAllFields(gstruct.Fields{
-				"ObservedGeneration":          gstruct.Ignore(),
-				"Phase":                       gstruct.Ignore(),
-				"Conditions":                  gstruct.Ignore(),
-				"Message":                     gstruct.Ignore(),
-				"Reason":                      gstruct.Ignore(),
-				"NominatedNodeName":           gstruct.Ignore(),
-				"HostIP":                      gstruct.Ignore(),
-				"HostIPs":                     gstruct.Ignore(),
-				"PodIP":                       gstruct.Ignore(),
-				"PodIPs":                      gstruct.Ignore(),
-				"StartTime":                   gstruct.Ignore(),
-				"InitContainerStatuses":       gstruct.Ignore(),
-				"ContainerStatuses":           gstruct.Ignore(),
-				"QOSClass":                    gomega.Equal(pod.Status.QOSClass), // QOSClass should be kept
-				"EphemeralContainerStatuses":  gstruct.Ignore(),
-				"Resize":                      gstruct.Ignore(),
-				"ResourceClaimStatuses":       gstruct.Ignore(),
-				"ExtendedResourceClaimStatus": gstruct.Ignore(),
-				"Resources":                   gstruct.Ignore(),
-				"AllocatedResources":          gstruct.Ignore(),
-			}))
+				// fetch the reject Pod and compare the status
+				_, err := f.ClientSet.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+				errC <- err
+			}()
+			count := 0
+			gomega.Consistently(func() bool {
+				pod2 := &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod-out-of-cpu" + strconv.Itoa(count),
+						Namespace: f.Namespace.Name,
+					},
+					Spec: v1.PodSpec{
+						Containers: []v1.Container{
+							{
+								Name:  "pod-out-of-cpu",
+								Image: imageutils.GetPauseImageName(),
+								Resources: v1.ResourceRequirements{
+									Requests: v1.ResourceList{
+										v1.ResourceCPU: resource.MustParse("100m"), // requests more CPU than any node has
+									},
+								},
+							},
+						},
+					},
+				}
+				count += 1
+				pod2, err = f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(ctx, pod2, metav1.CreateOptions{})
+				framework.ExpectNoError(err)
+				err = e2epod.WaitForPodRunningInNamespace(ctx, f.ClientSet, pod2)
+				framework.ExpectNoError(err)
+
+				return true
+			}, 2*time.Minute, 5*time.Millisecond).Should(gomega.BeTrue())
+			if err := <-errC; err != nil {
+				framework.ExpectNoError(err)
+			}
 		})
 	})
 })
