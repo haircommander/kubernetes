@@ -40,6 +40,7 @@ func startAPIServer(tCtx ktesting.TContext, t *testing.T, serveCheckpointAPI boo
 			// Disable admission plugins that interfere with a minimal pod/node setup.
 			opts.Admission.GenericAdmission.DisablePlugins = []string{"ServiceAccount", "TaintNodesByCondition", "Priority", "StorageObjectInUseProtection"}
 			if serveCheckpointAPI {
+				opts.Admission.GenericAdmission.EnablePlugins = []string{"PodCheckpoint"}
 				opts.APIEnablement.RuntimeConfig = cliflag.ConfigurationMap{
 					nodev1alpha1.SchemeGroupVersion.String(): "true",
 				}
