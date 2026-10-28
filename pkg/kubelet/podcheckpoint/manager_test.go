@@ -155,10 +155,11 @@ func (m *checkpointProbeManager) ResumeProbes(uid types.UID) {
 
 // checkpointPodWorkers stands in for the pod workers in checkpoint tests. A
 // sync runs only the step of SyncPod that captures a requested checkpoint,
-// with the status that the runtime reports. onSync, if set, replaces the
-// capture.
+// with the status that the runtime reports. It runs before SyncPodNow returns
+// unless async is set. onSync, if set, replaces the capture.
 type checkpointPodWorkers struct {
 	manager              *Manager
+	async                bool
 	terminationRequested map[types.UID]bool
 	onSync               func(pod *v1.Pod)
 }
@@ -172,11 +173,18 @@ func (w *checkpointPodWorkers) SyncPodNow(ctx context.Context, pod *v1.Pod) {
 		w.onSync(pod)
 		return
 	}
-	podStatus, err := w.manager.containerRuntime.GetPodStatus(ctx, &kubecontainer.Pod{ID: pod.UID, Name: pod.Name, Namespace: pod.Namespace})
-	if err != nil {
+	syncPod := func() {
+		podStatus, err := w.manager.containerRuntime.GetPodStatus(ctx, &kubecontainer.Pod{ID: pod.UID, Name: pod.Name, Namespace: pod.Namespace})
+		if err != nil {
+			return
+		}
+		w.manager.syncPodCheckpointRequest(ctx, pod, podStatus)
+	}
+	if w.async {
+		go syncPod()
 		return
 	}
-	w.manager.syncPodCheckpointRequest(ctx, pod, podStatus)
+	syncPod()
 }
 
 func useCheckpointStorage(kl *Manager) {
