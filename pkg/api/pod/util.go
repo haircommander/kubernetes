@@ -1669,6 +1669,13 @@ func DefaultPodLevelResources(pod *api.Pod) {
 		return
 	}
 
+	// Limit-only resources (e.g. pids) are not supported pod-level resources, so
+	// a pod whose only pod-level entries are limit-only has not opted into
+	// pod-level cpu/memory/hugepages semantics and must not be defaulted.
+	if !helper.IsPodLevelResourcesSet(pod) {
+		return
+	}
+
 	v1PodSpec := &apiv1.PodSpec{}
 	// Ephemeral containers are excluded here as they cannot specify resources and do not contribute
 	// to QoS or pod-level resource defaulting. If this changes, this location may need to be updated.

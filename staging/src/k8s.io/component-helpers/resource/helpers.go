@@ -64,12 +64,12 @@ type PodResourcesOptions struct {
 
 var supportedPodLevelResources = sets.New(v1.ResourceCPU, v1.ResourceMemory)
 
-// limitOnlyResources are resources that only support cgroup limits (e.g. swap).
+// limitOnlyResources are resources that only support cgroup limits (e.g. swap, pids).
 // Requests must not be set and must not be defaulted from limits for these resources.
 // Keeping limitOnlyResources disjoint from supportedPodLevelResources and
 // standardContainerResources ensures that QoS, PodRequests/PodLimits aggregation,
 // defaultPodRequests, LimitRange, and ResourceQuota invariants remain untouched for all callers.
-var limitOnlyResources = sets.New(v1.ResourceSwap)
+var limitOnlyResources = sets.New(v1.ResourceSwap, v1.ResourcePID)
 
 func SupportedPodLevelResources() sets.Set[v1.ResourceName] {
 	return supportedPodLevelResources.Clone().Insert(v1.ResourceHugePagesPrefix)
@@ -83,7 +83,7 @@ func IsSupportedPodLevelResource(name v1.ResourceName) bool {
 }
 
 // IsLimitOnlyResource returns true for resources that only support limits
-// (e.g. swap). Requests must not be set or defaulted for these resources.
+// (e.g. swap, pids). Requests must not be set or defaulted for these resources.
 func IsLimitOnlyResource(name v1.ResourceName) bool {
 	return limitOnlyResources.Has(name)
 }
