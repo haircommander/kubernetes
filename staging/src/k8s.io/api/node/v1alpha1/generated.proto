@@ -141,8 +141,8 @@ message PodCheckpointStatus {
   // +listType=map
   // +listMapKey=type
   // +k8s:optional
-  // +k8s:listType=map
-  // +k8s:listMapKey=type
+  // +k8s:alpha(since: "1.38")=+k8s:listType=map
+  // +k8s:alpha(since: "1.38")=+k8s:listMapKey=type
   repeated .k8s.io.apimachinery.pkg.apis.meta.v1.Condition conditions = 1;
 
   // nodeName is the source node assigned to execute this checkpoint. The
