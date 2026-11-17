@@ -140,7 +140,13 @@ func (m *Manager) startPodCheckpointWatch(ctx context.Context) {
 		return
 	}
 
-	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+	queue := workqueue.NewTypedRateLimitingQueueWithConfig(
+		workqueue.DefaultTypedControllerRateLimiter[string](),
+		workqueue.TypedRateLimitingQueueConfig[string]{
+			Name:   "podcheckpoint-watch",
+			Logger: &logger,
+		},
+	)
 	defer queue.ShutDown()
 
 	informer := nodeinformers.NewTypedFilteredPodCheckpointInformer(m.kubeClient, metav1.NamespaceAll, 0, nodeinformers.PodCheckpointIndexers{cache.NamespaceIndex: func(checkpoint *nodev1alpha1.PodCheckpoint) ([]string, error) {
