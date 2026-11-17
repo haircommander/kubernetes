@@ -183,6 +183,9 @@ func init() {
 			"status.checkpointedPodTemplate.spec.initContainers[*].securityContext.seccompProfile.type": {
 				{ErrorType: "FieldValueRequired"},
 			},
+			"status.checkpointedPodTemplate.spec.podNetwork": {
+				{ErrorType: "FieldValueNotSupported"},
+			},
 			"status.checkpointedPodTemplate.spec.schedulingGroup": {
 				{ErrorType: "FieldValueForbidden", Origin: "dependentForbidden"},
 			},
