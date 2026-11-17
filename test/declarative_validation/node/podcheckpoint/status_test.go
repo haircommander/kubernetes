@@ -41,6 +41,16 @@ func mkTemplate(image, label string, tweaks ...podtest.TweakContainer) *core.Pod
 	}
 }
 
+// mkTemplateWithContainers returns a captured template with the named
+// containers, so a status can satisfy the container/template consistency check.
+func mkTemplateWithContainers(names ...string) *core.PodTemplateSpec {
+	containers := make([]core.Container, 0, len(names))
+	for _, name := range names {
+		containers = append(containers, podtest.MakeContainer(name, podtest.SetContainerImage("image:v1")))
+	}
+	return &core.PodTemplateSpec{Spec: podtest.MakePodSpec(podtest.SetContainers(containers...))}
+}
+
 func TestDeclarativeValidateStatusUpdate(t *testing.T) {
 	statusPath := field.NewPath("status")
 	locationPath := statusPath.Child("checkpointLocation")
@@ -176,19 +186,40 @@ func TestDeclarativeValidateStatusUpdate(t *testing.T) {
 			expectedErrs: field.ErrorList{field.Required(locationPath.Child("nodeLocal", "path"), "")},
 		},
 		"valid containers": {
-			newStatus: node.PodCheckpointStatus{CheckpointedContainers: []node.PodCheckpointContainerStatus{{Name: "app"}, {Name: "sidecar"}}},
+			newStatus: node.PodCheckpointStatus{
+				CheckpointedContainers:  []node.PodCheckpointContainerStatus{{Name: "app"}, {Name: "sidecar"}},
+				CheckpointedPodTemplate: mkTemplateWithContainers("app", "sidecar"),
+			},
 		},
 		"empty container name": {
-			newStatus:    node.PodCheckpointStatus{CheckpointedContainers: []node.PodCheckpointContainerStatus{{}}},
-			expectedErrs: field.ErrorList{field.Required(containersPath.Index(0).Child("name"), "")},
+			newStatus: node.PodCheckpointStatus{
+				CheckpointedContainers:  []node.PodCheckpointContainerStatus{{}},
+				CheckpointedPodTemplate: mkTemplateWithContainers("app"),
+			},
+			expectedErrs: field.ErrorList{
+				field.Required(containersPath.Index(0).Child("name"), ""),
+				field.Invalid(containersPath, nil, "").MarkFromImperative(),
+			},
 		},
 		"invalid container name": {
-			newStatus:    node.PodCheckpointStatus{CheckpointedContainers: []node.PodCheckpointContainerStatus{{Name: "Invalid_Name"}}},
-			expectedErrs: field.ErrorList{field.Invalid(containersPath.Index(0).Child("name"), nil, "").WithOrigin("format=k8s-short-name")},
+			newStatus: node.PodCheckpointStatus{
+				CheckpointedContainers:  []node.PodCheckpointContainerStatus{{Name: "Invalid_Name"}},
+				CheckpointedPodTemplate: mkTemplateWithContainers("app"),
+			},
+			expectedErrs: field.ErrorList{
+				field.Invalid(containersPath.Index(0).Child("name"), nil, "").WithOrigin("format=k8s-short-name"),
+				field.Invalid(containersPath, nil, "").MarkFromImperative(),
+			},
 		},
 		"duplicate container names": {
-			newStatus:    node.PodCheckpointStatus{CheckpointedContainers: []node.PodCheckpointContainerStatus{{Name: "app"}, {Name: "app"}}},
-			expectedErrs: field.ErrorList{field.Duplicate(containersPath.Index(1), nil)},
+			newStatus: node.PodCheckpointStatus{
+				CheckpointedContainers:  []node.PodCheckpointContainerStatus{{Name: "app"}, {Name: "app"}},
+				CheckpointedPodTemplate: mkTemplateWithContainers("app"),
+			},
+			expectedErrs: field.ErrorList{
+				field.Duplicate(containersPath.Index(1), nil),
+				field.Invalid(containersPath, nil, "").MarkFromImperative(),
+			},
 		},
 		"legacy location is ratcheted": {
 			oldStatus: node.PodCheckpointStatus{CheckpointLocation: &node.CheckpointSource{Type: "Unknown"}},
@@ -199,9 +230,15 @@ func TestDeclarativeValidateStatusUpdate(t *testing.T) {
 			newStatus: node.PodCheckpointStatus{CheckpointedContainers: []node.PodCheckpointContainerStatus{{Name: "app"}, {Name: "Invalid_Name"}}},
 		},
 		"new invalid container is rejected after reorder": {
-			oldStatus:    node.PodCheckpointStatus{CheckpointedContainers: []node.PodCheckpointContainerStatus{{Name: "sidecar"}, {Name: "app"}}},
-			newStatus:    node.PodCheckpointStatus{CheckpointedContainers: []node.PodCheckpointContainerStatus{{Name: "app"}, {Name: "Invalid_Name"}}},
-			expectedErrs: field.ErrorList{field.Invalid(containersPath.Index(1).Child("name"), nil, "").WithOrigin("format=k8s-short-name")},
+			oldStatus: node.PodCheckpointStatus{CheckpointedContainers: []node.PodCheckpointContainerStatus{{Name: "sidecar"}, {Name: "app"}}},
+			newStatus: node.PodCheckpointStatus{
+				CheckpointedContainers:  []node.PodCheckpointContainerStatus{{Name: "app"}, {Name: "Invalid_Name"}},
+				CheckpointedPodTemplate: mkTemplateWithContainers("app"),
+			},
+			expectedErrs: field.ErrorList{
+				field.Invalid(containersPath.Index(1).Child("name"), nil, "").WithOrigin("format=k8s-short-name"),
+				field.Invalid(containersPath, nil, "").MarkFromImperative(),
+			},
 		},
 	}
 	for _, apiVersion := range apiVersions {
