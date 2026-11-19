@@ -6033,10 +6033,7 @@ type PodStatus struct {
 	// applied at the pod level if pod-level requests or limits are set in
 	// PodSpec.Resources, plus pod.spec.overhead if specified (for limits, only added
 	// to non-zero limits; kubelets prior to v1.38 may omit overhead from memory and
-	// hugepages requests when set in PodSpec.Resources). This also includes
-	// pod-level-only, limit-only resources (e.g. pids) when set; such values reflect
-	// what was requested and are not currently reconciled against an enacted value
-	// that may differ (e.g. a pids limit clamped by the node's podPidsLimit).
+	// hugepages requests when set in PodSpec.Resources).
 	// +featureGate=InPlacePodLevelResourcesVerticalScaling
 	// +optional
 	Resources *ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,20,opt,name=resources"`

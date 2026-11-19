@@ -22665,7 +22665,7 @@ func TestValidateContainerResourceName_PID(t *testing.T) {
 		{
 			name:      "pids rejected at container level",
 			resource:  core.ResourcePID,
-			expectErr: field.ErrorList{field.Invalid(fldPath, core.ResourcePID, "must be a standard resource for containers")},
+			expectErr: field.ErrorList{field.Invalid(fldPath, core.ResourcePID, "must be a standard resource type or fully qualified")},
 		},
 		{
 			name:     "cpu still works",

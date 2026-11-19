@@ -294,7 +294,6 @@ var standardResources = sets.New(
 	core.ResourceCPU,
 	core.ResourceMemory,
 	core.ResourceEphemeralStorage,
-	core.ResourcePID,
 	core.ResourceRequestsCPU,
 	core.ResourceRequestsMemory,
 	core.ResourceRequestsEphemeralStorage,

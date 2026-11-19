@@ -30,8 +30,7 @@ import (
 )
 
 // MinPodPIDLimit and MaxPodPIDLimit define the valid range for
-// spec.resources.limits.pids.  Exported so that validation and kubelet
-// admission share a single definition.
+// spec.resources.limits.pids.
 const (
 	MinPodPIDLimit = 128
 	MaxPodPIDLimit = 16384

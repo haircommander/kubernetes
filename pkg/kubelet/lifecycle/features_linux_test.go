@@ -97,9 +97,7 @@ func TestIsPerPodPIDLimitSupported(t *testing.T) {
 			expectAdmit:   true,
 		},
 		{
-			// Static pods bypass apiserver validation; the kubelet must
-			// reject out-of-range values itself.
-			name:        "pod with pid limit below the allowed range rejected",
+			name:        "pid limit below this kubelet's API range is not revalidated",
 			gateEnabled: true,
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "pid-pod-low"},
@@ -110,10 +108,11 @@ func TestIsPerPodPIDLimitSupported(t *testing.T) {
 					Containers: []v1.Container{{Name: "c1"}},
 				},
 			},
-			expectAdmit: false,
+			mockCgroupsV2: ptr.To(true),
+			expectAdmit:   true,
 		},
 		{
-			name:        "pod with pid limit above the allowed range rejected",
+			name:        "pid limit above this kubelet's API range is not revalidated",
 			gateEnabled: true,
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "pid-pod-high"},
@@ -124,7 +123,8 @@ func TestIsPerPodPIDLimitSupported(t *testing.T) {
 					Containers: []v1.Container{{Name: "c1"}},
 				},
 			},
-			expectAdmit: false,
+			mockCgroupsV2: ptr.To(true),
+			expectAdmit:   true,
 		},
 	}
 

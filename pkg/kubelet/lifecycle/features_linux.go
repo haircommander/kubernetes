@@ -26,7 +26,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/component-helpers/resource"
-	coreresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/features"
 )
 
@@ -47,17 +46,12 @@ func isPodLevelResourcesSupported(pod *v1.Pod) PodAdmitResult {
 	return PodAdmitResult{Admit: true}
 }
 
-// isPerPodPIDLimitSupported revalidates the PID range as defense against
-// version skew between this node and the API server (e.g. a kubelet binary
-// with different MinPodPIDLimit/MaxPodPIDLimit bounds), and enforces the
-// PerPodPIDLimit gate when it is disabled on this node even though the API
-// server admitted the pod. Static pods already run through the same
-// validation.ValidatePodCreate path (see pkg/kubelet/config/common.go).
+// Leave range checks to API validation (including static pods) to allow version skew.
 func isPerPodPIDLimitSupported(pod *v1.Pod) PodAdmitResult {
 	if pod.Spec.Resources == nil {
 		return PodAdmitResult{Admit: true}
 	}
-	pidQuantity, ok := pod.Spec.Resources.Limits[v1.ResourcePID]
+	_, ok := pod.Spec.Resources.Limits[v1.ResourcePID]
 	if !ok {
 		return PodAdmitResult{Admit: true}
 	}
@@ -68,13 +62,6 @@ func isPerPodPIDLimitSupported(pod *v1.Pod) PodAdmitResult {
 			Admit:   false,
 			Reason:  PerPodPIDLimitNotAdmittedReason,
 			Message: fmt.Sprintf("pod %s specifies spec.resources.limits.pids, but the PerPodPIDLimit feature gate is disabled on this node", pod.Name),
-		}
-	}
-	if pidValue := pidQuantity.Value(); pidValue < coreresource.MinPodPIDLimit || pidValue > coreresource.MaxPodPIDLimit {
-		return PodAdmitResult{
-			Admit:   false,
-			Reason:  PerPodPIDLimitNotAdmittedReason,
-			Message: fmt.Sprintf("pod %s specifies spec.resources.limits.pids=%d, which is outside the allowed range [%d, %d]", pod.Name, pidValue, coreresource.MinPodPIDLimit, coreresource.MaxPodPIDLimit),
 		}
 	}
 	if !isCgroupV2() {
