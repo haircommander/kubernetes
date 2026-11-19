@@ -6654,7 +6654,7 @@ func ValidatePodResize(newPod, oldPod *core.Pod, opts PodValidationOptions) fiel
 		allErrs = append(allErrs, field.Invalid(specPath, newPod.Status.QOSClass, "Pod QOS Class may not change as a result of resizing"))
 	}
 
-	if helper.IsPodLevelResourcesSet(oldPod) || helper.IsPodLevelResourcesSet(newPod) {
+	if hasPodLevelResizeResources(oldPod) || hasPodLevelResizeResources(newPod) {
 		// pods with pod-level resources cannot be resized without
 		// InPlacePodLevelResourcesVerticalScaling feature gate being enabled.
 		if !opts.InPlacePodLevelResourcesVerticalScalingEnabled {
@@ -6716,6 +6716,18 @@ func ValidatePodResize(newPod, oldPod *core.Pod, opts PodValidationOptions) fiel
 	return allErrs
 }
 
+func hasPodLevelResizeResources(pod *core.Pod) bool {
+	if pod.Spec.Resources == nil {
+		return false
+	}
+	if helper.IsPodLevelResourcesSet(pod) {
+		return true
+	}
+	// Swap is resizable without pod-level compute resources, unlike PID limits.
+	_, hasSwapLimit := pod.Spec.Resources.Limits[core.ResourceSwap]
+	return hasSwapLimit
+}
+
 func isInitContainerResizable(ctr *core.Container) bool {
 	return podutil.IsRestartableInitContainer(ctr) || utilfeature.DefaultFeatureGate.Enabled(features.InPlacePodVerticalScalingInitContainers)
 }
@@ -6727,7 +6739,7 @@ func validateResizableSpecChanges(newPod, oldPod *core.Pod, specPath *field.Path
 	var allErrs field.ErrorList
 
 	var mungedPodSpec core.PodSpec
-	if opts.InPlacePodLevelResourcesVerticalScalingEnabled && (helper.IsPodLevelResourcesSet(oldPod) || helper.IsPodLevelResourcesSet(newPod)) {
+	if opts.InPlacePodLevelResourcesVerticalScalingEnabled && (hasPodLevelResizeResources(oldPod) || hasPodLevelResizeResources(newPod)) {
 		var errs field.ErrorList
 		errs, mungedPodSpec = validatePodLevelResourcesResize(newPod, oldPod, specPath, opts)
 		allErrs = append(allErrs, errs...)
@@ -6847,7 +6859,7 @@ func ValidatePodDynamicUpdate(newPod, oldPod *core.Pod, opts PodValidationOption
 // validateResizeAllowed validates that the pod may be resized.
 func validateResizeAllowed(newPod, oldPod *core.Pod, specPath *field.Path, opts PodValidationOptions) field.ErrorList {
 	var allErrs field.ErrorList
-	if !opts.InPlacePodLevelResourcesVerticalScalingEnabled && (helper.IsPodLevelResourcesSet(oldPod) || helper.IsPodLevelResourcesSet(newPod)) {
+	if !opts.InPlacePodLevelResourcesVerticalScalingEnabled && (hasPodLevelResizeResources(oldPod) || hasPodLevelResizeResources(newPod)) {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath(""), "resize of pods with pod-level resources is forbidden when InPlacePodLevelResourcesVerticalScalingEnabled feature gate is disabled"))
 	}
 	return allErrs

@@ -32059,6 +32059,78 @@ func TestValidatePodResize(t *testing.T) {
 	}
 }
 
+func TestValidatePodLevelSwapResize(t *testing.T) {
+	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.WorkloadControlledSwap, true)
+	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.PerPodPIDLimit, true)
+
+	for _, tc := range []struct {
+		name   string
+		limits core.ResourceList
+	}{
+		{name: "swap only", limits: core.ResourceList{core.ResourceSwap: resource.MustParse("100Mi")}},
+		{name: "swap and pids", limits: core.ResourceList{core.ResourceSwap: resource.MustParse("100Mi"), core.ResourcePID: resource.MustParse("256")}},
+		{name: "swap and memory", limits: core.ResourceList{core.ResourceSwap: resource.MustParse("100Mi"), core.ResourceMemory: resource.MustParse("400Mi")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldPod := podtest.MakePod("pod",
+				podtest.SetContainers(podtest.MakeContainer("container",
+					podtest.SetContainerResources(core.ResourceRequirements{
+						Requests: getResources("100m", "100Mi", "", ""),
+						Limits:   getResources("200m", "200Mi", "", ""),
+					}),
+				)),
+				podtest.SetPodResources(&core.ResourceRequirements{Limits: tc.limits}),
+			)
+			oldPod.Namespace = "ns"
+			oldPod.ResourceVersion = "1"
+			oldPod.Spec.DNSPolicy = core.DNSClusterFirst
+			oldPod.Spec.RestartPolicy = core.RestartPolicyAlways
+			newPod := oldPod.DeepCopy()
+			newPod.ResourceVersion = "2"
+			newPod.Spec.Resources.Limits[core.ResourceSwap] = resource.MustParse("200Mi")
+
+			for name, validator := range map[string]struct {
+				validate            func(*core.Pod, *core.Pod, PodValidationOptions) field.ErrorList
+				resizeDisabledError *field.Error
+			}{
+				"resize": {
+					validate:            ValidatePodResize,
+					resizeDisabledError: field.Forbidden(field.NewPath(""), "resize of pods with pod-level resources is forbidden when InPlacePodLevelResourcesVerticalScalingEnabled feature gate is disabled"),
+				},
+				"dynamic": {
+					validate:            ValidatePodDynamicUpdate,
+					resizeDisabledError: field.Forbidden(field.NewPath("spec"), "pod updates may not change fields other than"),
+				},
+			} {
+				t.Run(name, func(t *testing.T) {
+					opts := PodValidationOptions{
+						InPlacePodLevelResourcesVerticalScalingEnabled: true,
+						PodLevelResourcesEnabled:                       true,
+						AllowWorkloadControlledSwap:                    true,
+						AllowPodPIDLimit:                               true,
+					}
+					if errs := validator.validate(newPod, oldPod, opts); len(errs) != 0 {
+						t.Errorf("pod-level swap resize should be allowed, got: %v", errs)
+					}
+
+					matcher := field.ErrorMatcher{}.ByType().ByField().ByDetailSubstring()
+					opts.InPlacePodLevelResourcesVerticalScalingEnabled = false
+					matcher.Test(t, field.ErrorList{validator.resizeDisabledError}, validator.validate(newPod, oldPod, opts))
+
+					if _, hasPIDLimit := tc.limits[core.ResourcePID]; hasPIDLimit {
+						opts.InPlacePodLevelResourcesVerticalScalingEnabled = true
+						pidResize := newPod.DeepCopy()
+						pidResize.Spec.Resources.Limits[core.ResourcePID] = resource.MustParse("512")
+						matcher.Test(t, field.ErrorList{
+							field.Forbidden(field.NewPath("spec"), "only cpu and memory resources are mutable at pod-level"),
+						}, validator.validate(pidResize, oldPod, opts))
+					}
+				})
+			}
+		})
+	}
+}
+
 // TestValidatePodResize_PIDOnlyPodDoesNotBlockContainerResize verifies that a
 // pod whose only pod-level resource is limits.pids is NOT treated as having
 // pod-level resources for resize purposes.  pids is a limit-only resource that
